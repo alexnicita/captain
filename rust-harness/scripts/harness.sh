@@ -72,19 +72,23 @@ if [[ ! -d "$REPO_DIR" ]]; then
 fi
 
 RUNTIME_SEC="$(to_seconds "$TIME_INPUT")"
+# gate start currently accepts minute-based args
+RUNTIME_MIN="$(( (RUNTIME_SEC + 59) / 60 ))"
+HEARTBEAT_MIN="$(( (HEARTBEAT_SEC + 59) / 60 ))"
 STATE_DIR="$ROOT_DIR/runs/runtime-gate-$(date +%Y%m%d-%H%M%S)"
 CHECKLIST="$ROOT_DIR/fixtures/gate_checklist.done.md"
 
 echo "[harness] repo=$REPO_DIR"
-echo "[harness] runtime_sec=$RUNTIME_SEC"
+echo "[harness] runtime_sec=$RUNTIME_SEC (min_runtime_minutes=$RUNTIME_MIN)"
+echo "[harness] heartbeat_sec=$HEARTBEAT_SEC (heartbeat_minutes=$HEARTBEAT_MIN)"
 echo "[harness] state_dir=$STATE_DIR"
 
 # Execute from target repo context (the gate command itself currently does not accept --repo).
 pushd "$REPO_DIR" >/dev/null
 cargo run --manifest-path "$ROOT_DIR/Cargo.toml" -- gate start \
   --checklist "$CHECKLIST" \
-  --runtime-sec "$RUNTIME_SEC" \
-  --heartbeat-sec "$HEARTBEAT_SEC" \
+  --min-runtime-minutes "$RUNTIME_MIN" \
+  --heartbeat-minutes "$HEARTBEAT_MIN" \
   --poll-seconds "$POLL_SEC" \
   --base-dir "$STATE_DIR"
 popd >/dev/null
