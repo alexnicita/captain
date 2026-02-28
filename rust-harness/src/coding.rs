@@ -317,7 +317,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         }
         Err(err) => {
             let refusal = format!(
-                "coding run refused: another coding run appears active for repo {} (lock: {})",
+                "coding run refused (fail-fast lock): another coding run appears active for repo {} (lock: {})",
                 repo_path.display(),
                 lock_path.display()
             );
@@ -2356,20 +2356,6 @@ fn save_progress_memory(path: &Path, progress: &TaskProgressMemory) -> Result<()
         fs::create_dir_all(parent)?;
     }
     fs::write(path, serde_json::to_string_pretty(progress)?)?;
-    Ok(())
-}
-
-fn materialize_forced_mutation(repo_path: &Path, cycle: u64, task: &FeatureTask) -> Result<()> {
-    let path = repo_path.join(".harness/forced-mutations.md");
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    writeln!(
-        file,
-        "- [ ] cycle {}: materialize '{}' ({})",
-        cycle, task.title, task.source
-    )?;
     Ok(())
 }
 
