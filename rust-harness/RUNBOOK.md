@@ -63,9 +63,13 @@ Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_reso
 Hard anti-noop controls (defaults):
 - `noop_streak_limit=3`: after 3 consecutive commit skips, next architecture/feature cycle forces a concrete mutation materialization; cycle fails if no diff is produced.
 - `conformance_interval_unchanged=3`: full conformance runs every 3 unchanged cycles, but always runs immediately when mutations exist.
-- Single-instance per repo lock: lock file prevents concurrent coding runs on the same repo and emits a lock-exists event.
-- Progress memory persists completed roadmap lines (`.harness/coding-progress.json`) so architecture selection advances instead of repeating.
-- Counters are emitted every cycle: `noop_streak`, `forced_mutation`, `task_advanced`.
+- Single-instance per repo lock: lock file prevents concurrent coding runs on the same repo and emits `coding.lock.exists` with a refusal message (and `coding.lock.acquired` on success).
+- Progress memory persists completed+attempted task ids (`.harness/coding-progress.json`) so architecture selection advances instead of repeating.
+- If the same task repeats with no net diff for >2 cycles, task selection escalates to alternate sources.
+- Commit quality gate blocks fallback/materialization-only diffs unless `src/` or task-tied docs changed.
+- Commit subject quality gate enforces conventional + informative file-aware subjects, blocks generic templated text, and de-duplicates short-window repeats.
+- Explicit git lifecycle events are emitted: `git.commit`, `git.push`.
+- Counters are emitted every cycle: `noop_streak`, `forced_mutation`, `task_advanced`, `source_escalation`.
 
 ## 5) Runtime-gate checklist run (Rust)
 
