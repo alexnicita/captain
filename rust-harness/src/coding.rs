@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,8 @@ use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
 const OUTPUT_TAIL_LIMIT: usize = 4_000;
+const TASK_SELECTION_COOLDOWN_CYCLES: u64 = 2;
+const TASK_NO_DIFF_ESCALATION_THRESHOLD: u64 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
