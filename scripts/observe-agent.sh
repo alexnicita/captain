@@ -7,10 +7,12 @@ set -euo pipefail
 # Usage:
 #   scripts/observe-agent.sh --latest
 #   scripts/observe-agent.sh --file /path/to/transcript.jsonl
+#   scripts/observe-agent.sh --all
 #   scripts/observe-agent.sh --latest --kb-root /home/ec2-user/.openclaw/workspace/kb
 
 TRANSCRIPT_FILE=""
 USE_LATEST=0
+USE_ALL=0
 KB_ROOT="/home/ec2-user/.openclaw/workspace/kb"
 WORKSPACE="/home/ec2-user/.openclaw/workspace"
 REFRESH_SECS=20
@@ -25,6 +27,8 @@ while [[ $# -gt 0 ]]; do
       KB_ROOT="${2:-}"; shift 2 ;;
     --workspace)
       WORKSPACE="${2:-}"; shift 2 ;;
+    --all)
+      USE_ALL=1; shift ;;
     --refresh)
       REFRESH_SECS="${2:-20}"; shift 2 ;;
     -h|--help)
@@ -42,9 +46,11 @@ if [[ "$USE_LATEST" -eq 1 ]]; then
   fi
 fi
 
-if [[ -z "$TRANSCRIPT_FILE" || ! -f "$TRANSCRIPT_FILE" ]]; then
-  echo "Transcript file not found. Use --latest or --file <path>." >&2
-  exit 1
+if [[ "$USE_ALL" -ne 1 ]]; then
+  if [[ -z "$TRANSCRIPT_FILE" || ! -f "$TRANSCRIPT_FILE" ]]; then
+    echo "Transcript file not found. Use --latest or --file <path>, or use --all." >&2
+    exit 1
+  fi
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
@@ -61,7 +67,11 @@ hr() { printf '%*s\n' "${COLUMNS:-100}" '' | tr ' ' '-'; }
 
 echo
 hr
-printf "🛰️  OBSERVING: %s\n" "$TRANSCRIPT_FILE"
+if [[ "$USE_ALL" -eq 1 ]]; then
+  printf "🛰️  OBSERVING: ALL session transcripts (main + subagents)\n"
+else
+  printf "🛰️  OBSERVING: %s\n" "$TRANSCRIPT_FILE"
+fi
 printf "📁 WORKSPACE: %s\n" "$WORKSPACE"
 printf "📚 KB ROOT  : %s\n" "$KB_ROOT"
 printf "⏱️  REFRESH  : %ss\n" "$REFRESH_SECS"
@@ -111,10 +121,21 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Event stream from transcript
+# Event stream from transcript(s)
 # We parse JSONL into readable categories with trimmed payloads.
 
-tail -F "$TRANSCRIPT_FILE" | stdbuf -oL jq -r '
+if [[ "$USE_ALL" -eq 1 ]]; then
+  mapfile -t _files < <(ls -1 /home/ec2-user/.openclaw/agents/main/sessions/*.jsonl 2>/dev/null || true)
+  if [[ ${#_files[@]} -eq 0 ]]; then
+    echo "No session transcript files found under /home/ec2-user/.openclaw/agents/main/sessions" >&2
+    exit 1
+  fi
+  TAIL_CMD=(tail -qF "${_files[@]}")
+else
+  TAIL_CMD=(tail -qF "$TRANSCRIPT_FILE")
+fi
+
+"${TAIL_CMD[@]}" | stdbuf -oL jq -r '
   def t($n): if . == null then "" elif (.|type)=="string" then (if (.|length)>$n then .[0:$n]+"…" else . end) else ((.|tostring) | if (.|length)>$n then .[0:$n]+"…" else . end) end;
   def clean: gsub("\\n";" ") | gsub("\\s+";" ");
 
