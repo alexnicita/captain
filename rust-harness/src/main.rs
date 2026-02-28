@@ -198,8 +198,7 @@ async fn main() -> Result<()> {
             prompt,
             prompt_file,
         } => {
-            coding_mode(
-                &cfg,
+            let args = CodingModeArgs {
                 repo,
                 time,
                 heartbeat_sec,
@@ -215,8 +214,8 @@ async fn main() -> Result<()> {
                 cycle_output_file,
                 prompt,
                 prompt_file,
-            )
-            .await?
+            };
+            coding_mode(&cfg, args).await?
         }
         Commands::Gate { command } => gate_command(command).await?,
         Commands::Status => status(&cfg).await?,
@@ -437,8 +436,7 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
     Ok(())
 }
 
-async fn coding_mode(
-    cfg: &AppConfig,
+struct CodingModeArgs {
     repo: String,
     time: String,
     heartbeat_sec: u64,
@@ -454,11 +452,13 @@ async fn coding_mode(
     cycle_output_file: Option<String>,
     prompt: Option<String>,
     prompt_file: Option<String>,
-) -> Result<()> {
-    let duration_sec = parse_duration_seconds(&time).map_err(|e| anyhow!(e))?;
-    let preset = parse_executor_preset(&executor)?;
+}
 
-    let user_prompt = match (prompt, prompt_file) {
+async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
+    let duration_sec = parse_duration_seconds(&args.time).map_err(|e| anyhow!(e))?;
+    let preset = parse_executor_preset(&args.executor)?;
+
+    let user_prompt = match (args.prompt, args.prompt_file) {
         (Some(prompt), None) => Some(prompt),
         (None, Some(path)) => {
             let loaded = fs::read_to_string(&path)?;
@@ -474,20 +474,20 @@ async fn coding_mode(
     };
 
     let summary = run_coding_loop(CodingRunArgs {
-        repo_path: repo,
+        repo_path: args.repo,
         duration_sec,
-        heartbeat_sec,
-        cycle_pause_sec,
+        heartbeat_sec: args.heartbeat_sec,
+        cycle_pause_sec: args.cycle_pause_sec,
         preset,
-        plan_cmd,
-        act_cmd,
-        verify_cmd,
-        allow_cmd,
+        plan_cmd: args.plan_cmd,
+        act_cmd: args.act_cmd,
+        verify_cmd: args.verify_cmd,
+        allow_cmd: args.allow_cmd,
         user_prompt,
-        commit_each_cycle,
-        push_each_cycle,
-        commit_message_prefix,
-        cycle_output_file,
+        commit_each_cycle: args.commit_each_cycle,
+        push_each_cycle: args.push_each_cycle,
+        commit_message_prefix: args.commit_message_prefix,
+        cycle_output_file: args.cycle_output_file,
         event_log_path: cfg.event_log_path.clone(),
     })
     .await?;
