@@ -2,3 +2,4 @@
 - [ ] cycle 4: materialize 'guaranteed phase state machine per cycle: `architecture -> feature -> conformance -> cleanup -> pause` (repeats until deadline)' (README.md)
 - [ ] cycle 6: materialize 'when repo is clean, architecture phase selects/builds the next feature task from internal docs/roadmap before feature execution' (README.md)
 - [ ] cycle 8: materialize 'phase label (`architecture|feature|conformance|cleanup|pause`)' (README.md)
+- [ ] cycle 10: materialize 'explicit `next` step' (README.md)
