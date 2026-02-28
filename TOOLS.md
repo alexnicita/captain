@@ -43,6 +43,10 @@ Things like:
 - Default to Rust for new tooling when practical.
 - Fall back only when integration speed/constraints require it.
 
+### Git Workflow Preference
+
+- After every local commit, immediately push to remote (`origin/master`) unless explicitly told otherwise.
+
 ## Why Separate?
 
 Skills are shared. Your setup is yours. Keeping them apart means you can update skills without losing your notes, and share skills without leaking your infrastructure.
