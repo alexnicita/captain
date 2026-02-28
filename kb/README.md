@@ -89,7 +89,16 @@ review_by: 2026-03-15
 - If source access is blocked (login/paywall), capture it in `sources/access-notes.md` and downgrade confidence.
 - Keep identity disambiguation explicit when names are non-unique.
 
+## Discovery Fallback Order (for reproducibility)
+1. `tools/parallel-search.js` (preferred discovery path when `PARALLEL_API_KEY` exists).
+2. First-party machine-readable assets (`sitemap.xml`, `rss.xml`, JSON indexes, public APIs).
+3. Search engine HTML snapshots (e.g., Brave SERP pages) with explicit snippet-risk labeling.
+4. Direct page extraction (`web_fetch`) and source-level checks (`curl`) when readability parsers fail.
+
+Record which layer produced each claim so future reruns are comparable.
+
 ## Immediate Next Expansion Priorities
 1. Build `intelligence/facts.md` and `intelligence/assumptions.md` from latest dossier.
 2. Populate `evidence/project-evidence-map.md` with current proof gaps and required artifacts.
 3. Maintain `primary-research/open-questions.md` as the live interview agenda.
+4. Add a claim ledger that marks each assertion as `self-asserted`, `third-party-verified`, or `unverified`.
