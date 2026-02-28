@@ -94,6 +94,9 @@ fn known_kinds() -> BTreeSet<&'static str> {
         kinds::TOOL_CALL,
         kinds::TOOL_OUTPUT,
         kinds::TOOL_ERROR,
+        kinds::SCHEDULER_DISPATCH,
+        kinds::SCHEDULER_RESULT,
+        kinds::SCHEDULER_TICK,
         kinds::CLI_RUN_SUMMARY,
         kinds::CLI_BATCH_SUMMARY,
     ])

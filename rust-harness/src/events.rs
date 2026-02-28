@@ -19,6 +19,9 @@ pub mod kinds {
     pub const TOOL_CALL: &str = "tool.call";
     pub const TOOL_OUTPUT: &str = "tool.output";
     pub const TOOL_ERROR: &str = "tool.error";
+    pub const SCHEDULER_DISPATCH: &str = "scheduler.dispatch";
+    pub const SCHEDULER_RESULT: &str = "scheduler.result";
+    pub const SCHEDULER_TICK: &str = "scheduler.tick";
     pub const CLI_RUN_SUMMARY: &str = "cli.run.summary";
     pub const CLI_BATCH_SUMMARY: &str = "cli.batch.summary";
 }

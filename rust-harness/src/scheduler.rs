@@ -6,6 +6,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::VecDeque;
+use tokio::time::{sleep, timeout, Duration};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QueuedTask {
@@ -67,6 +68,7 @@ impl<'a> Scheduler<'a> {
         let mut failed = 0usize;
         let mut task_summaries = Vec::new();
         let max_concurrent = self.cfg.max_concurrent_tasks.max(1);
+        let poll_ms = self.cfg.queue_poll_ms.max(1);
 
         let mut in_flight = FuturesUnordered::new();
 
@@ -76,6 +78,17 @@ impl<'a> Scheduler<'a> {
                     break;
                 };
                 let task_id = item.task_id.clone();
+
+                self.event_sink.emit(
+                    &HarnessEvent::new(kinds::SCHEDULER_DISPATCH)
+                        .with_task_id(task_id.clone())
+                        .with_data(json!({
+                            "priority": item.priority,
+                            "queue_depth": queue.len(),
+                            "in_flight": in_flight.len() + 1,
+                        })),
+                )?;
+
                 let task_spec = TaskSpec {
                     task_id: item.task_id,
                     objective: item.objective,
@@ -84,17 +97,49 @@ impl<'a> Scheduler<'a> {
                 in_flight.push(fut);
             }
 
-            let Some((task_id, result)) = in_flight.next().await else {
-                break;
+            if in_flight.is_empty() {
+                if !queue.is_empty() {
+                    sleep(Duration::from_millis(poll_ms)).await;
+                }
+                continue;
+            }
+
+            let next_result = timeout(Duration::from_millis(poll_ms), in_flight.next()).await;
+            let Ok(Some((task_id, result))) = next_result else {
+                self.event_sink
+                    .emit(&HarnessEvent::new(kinds::SCHEDULER_TICK).with_data(json!({
+                        "queue_depth": queue.len(),
+                        "in_flight": in_flight.len(),
+                        "poll_ms": poll_ms,
+                    })))?;
+                continue;
             };
 
             match result {
                 Ok(summary) => {
                     completed += 1;
+                    self.event_sink.emit(
+                        &HarnessEvent::new(kinds::SCHEDULER_RESULT)
+                            .with_task_id(task_id)
+                            .with_data(json!({
+                                "status": "ok",
+                                "steps": summary.steps,
+                                "tool_calls": summary.tool_calls,
+                                "reason": summary.stopped_reason,
+                            })),
+                    )?;
                     task_summaries.push(summary);
                 }
                 Err(err) => {
                     failed += 1;
+                    self.event_sink.emit(
+                        &HarnessEvent::new(kinds::SCHEDULER_RESULT)
+                            .with_task_id(task_id.clone())
+                            .with_data(json!({
+                                "status": "error",
+                                "error": err.to_string(),
+                            })),
+                    )?;
                     self.event_sink.emit(
                         &HarnessEvent::new(kinds::TASK_FINISHED)
                             .with_task_id(task_id)
@@ -106,6 +151,8 @@ impl<'a> Scheduler<'a> {
                 }
             }
         }
+
+        task_summaries.sort_by(|a, b| a.task_id.cmp(&b.task_id));
 
         Ok(BatchSummary {
             total,

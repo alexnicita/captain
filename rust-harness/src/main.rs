@@ -294,15 +294,18 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
 
     let mut queue = TaskQueue::new();
     let lines = fs::read_to_string(objectives_file)?;
-    for (idx, line) in lines.lines().enumerate() {
+    let task_prefix = format!("task-{}", now_unix());
+    let mut task_index = 0usize;
+    for line in lines.lines() {
         let Some((priority, objective)) = parse_queue_line(line) else {
             continue;
         };
         queue.enqueue(QueuedTask {
-            task_id: format!("task-{}-{}", now_unix(), idx),
+            task_id: format!("{}-{}", task_prefix, task_index),
             objective,
             priority,
         });
+        task_index += 1;
     }
 
     let scheduler = Scheduler {

@@ -37,7 +37,7 @@ If you're migrating from Python-side orchestration helpers, see `MIGRATION.md`.
   - fixture-backed regression checks
 - **Observability**
   - run-scoped IDs + sequence numbers
-  - event taxonomy (`run.*`, `task.*`, `provider.*`, `tool.*`, `cli.*`)
+  - event taxonomy (`run.*`, `task.*`, `provider.*`, `tool.*`, `scheduler.*`, `cli.*`)
 
 ## Toolchain + local build checks
 
