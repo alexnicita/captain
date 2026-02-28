@@ -5,8 +5,9 @@ A general-purpose, publishable Rust harness for provider/tool orchestration.
 This project is intentionally **config-driven and pluggable**:
 - swap providers (`echo`, `http`, `http-stub`) via config
 - register tools with typed handlers + policy gates
-- run single tasks, loops, or queued batches
+- run single tasks, loops, queued batches, and runtime-gated checklist flows
 - emit JSONL event streams for replay/eval/regression checks
+- stay Rust-first (no Python runtime dependency for orchestration)
 
 See `ARCHITECTURE.md` for internals and extension points.
 
@@ -27,6 +28,9 @@ See `ARCHITECTURE.md` for internals and extension points.
 - **Queue/scheduler primitives**
   - in-memory priority queue (`[p1]` high-priority lines)
   - bounded-concurrency batch runner (configurable)
+- **Runtime-gate orchestration (Rust port)**
+  - enforce minimum runtime + checklist completion gates
+  - start/status/stop lifecycle with JSON state + progress logs
 - **Replay + eval baseline**
   - event taxonomy summaries
   - fixture-backed regression checks
@@ -54,6 +58,8 @@ agent-harness run --objective "what time is it"
 agent-harness run --objective "what time is it" --allow-tool time.now
 agent-harness batch --objectives-file ./fixtures/objectives.txt
 # objectives format supports optional prefixes: [p1] high, [p0] normal
+agent-harness gate start --checklist ./fixtures/gate_checklist.done.md --dry-run --dry-runtime-sec 3 --dry-heartbeat-sec 1 --poll-seconds 1
+agent-harness gate status
 agent-harness replay --path ./runs/events.jsonl
 agent-harness eval --path ./runs/events.jsonl
 agent-harness loop --interval-seconds 60 --max-iterations 5 --objective "heartbeat time task"
@@ -94,6 +100,7 @@ That script runs:
 2. `run` objective through orchestrator
 3. `replay` on generated event log
 4. `eval` regression checks on the same run
+5. `gate start/status` dry-run to validate Rust runtime-gate orchestration
 
 Use this flow continuously while extending modules.
 

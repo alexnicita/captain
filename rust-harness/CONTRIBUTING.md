@@ -8,6 +8,7 @@ Keep this harness reusable and publishable:
 - keep behavior config-driven
 - preserve provider/tool pluggability
 - keep event taxonomy stable or migration-noted
+- keep orchestration logic in Rust modules (avoid Python runtime dependencies)
 
 ## Development loop
 

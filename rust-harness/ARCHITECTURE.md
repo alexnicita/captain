@@ -28,6 +28,9 @@
   - tool lifecycle event emission
 - `scheduler.rs`
   - queue primitives + bounded-concurrency batch execution
+- `runtime_gate.rs`
+  - runtime/checklist gate control loop (`gate start|status|stop`)
+  - JSON state + progress log lifecycle
 - `events.rs`
   - event taxonomy constants
   - run IDs + sequence numbers
@@ -48,6 +51,7 @@
 ## Design principles
 
 - **General-purpose first**: no project-specific behavior in core modules.
+- **Rust-first implementation**: orchestration logic lives in Rust modules; shell scripts are wrappers only.
 - **Policy before execution**: enforce tool gates at dispatch boundary.
 - **Observability by default**: every state transition is evented.
 - **Config over constants**: all knobs exposed in TOML/env.

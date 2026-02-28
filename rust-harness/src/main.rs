@@ -4,6 +4,9 @@ use agent_harness::events::{kinds, now_unix, EventSink, HarnessEvent};
 use agent_harness::orchestrator::{Orchestrator, TaskSpec};
 use agent_harness::provider::build_provider;
 use agent_harness::replay::replay_file;
+use agent_harness::runtime_gate::{
+    gate_start, gate_status, gate_stop, GateStartArgs, GateStatusArgs, GateStopArgs,
+};
 use agent_harness::scheduler::{QueuedTask, Scheduler, TaskQueue};
 use agent_harness::tools::{ToolPolicy, ToolPolicyMode, ToolRegistry};
 use anyhow::Result;
@@ -58,6 +61,11 @@ enum Commands {
         #[arg(long)]
         objectives_file: String,
     },
+    /// Enforce runtime + checklist completion gates (Rust port of prior Python helper).
+    Gate {
+        #[command(subcommand)]
+        command: GateCommands,
+    },
     /// Print harness config and registered tools.
     Status,
     /// Replay event log and print event-kind summary.
@@ -69,6 +77,45 @@ enum Commands {
     Eval {
         #[arg(long)]
         path: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum GateCommands {
+    /// Start a runtime-gated checklist loop.
+    Start {
+        #[arg(long)]
+        checklist: String,
+        #[arg(long)]
+        run_id: Option<String>,
+        #[arg(long, default_value_t = 60.0)]
+        min_runtime_minutes: f64,
+        #[arg(long, default_value_t = 10.0)]
+        heartbeat_minutes: f64,
+        #[arg(long, default_value_t = 15)]
+        poll_seconds: u64,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        #[arg(long, default_value_t = 75)]
+        dry_runtime_sec: u64,
+        #[arg(long, default_value_t = 12)]
+        dry_heartbeat_sec: u64,
+        #[arg(long)]
+        base_dir: Option<String>,
+    },
+    /// Show status for current/latest runtime-gate run.
+    Status {
+        #[arg(long)]
+        run_dir: Option<String>,
+        #[arg(long)]
+        base_dir: Option<String>,
+    },
+    /// Request stop for current/latest runtime-gate run.
+    Stop {
+        #[arg(long)]
+        run_dir: Option<String>,
+        #[arg(long)]
+        base_dir: Option<String>,
     },
 }
 
@@ -90,6 +137,7 @@ async fn main() -> Result<()> {
             max_iterations,
         } => loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?,
         Commands::Batch { objectives_file } => batch_mode(&objectives_file, &cfg, &policy).await?,
+        Commands::Gate { command } => gate_command(command).await?,
         Commands::Status => status(&cfg).await?,
         Commands::Replay { path } => replay(path.as_deref(), &cfg).await?,
         Commands::Eval { path } => eval(path.as_deref(), &cfg).await?,
@@ -264,6 +312,45 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
     })))?;
 
     println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+async fn gate_command(command: GateCommands) -> Result<()> {
+    match command {
+        GateCommands::Start {
+            checklist,
+            run_id,
+            min_runtime_minutes,
+            heartbeat_minutes,
+            poll_seconds,
+            dry_run,
+            dry_runtime_sec,
+            dry_heartbeat_sec,
+            base_dir,
+        } => {
+            gate_start(GateStartArgs {
+                checklist,
+                run_id,
+                min_runtime_minutes,
+                heartbeat_minutes,
+                poll_seconds,
+                dry_run,
+                dry_runtime_sec,
+                dry_heartbeat_sec,
+                base_dir,
+            })
+            .await?
+        }
+        GateCommands::Status { run_dir, base_dir } => {
+            let status = gate_status(GateStatusArgs { run_dir, base_dir })?;
+            println!("{}", serde_json::to_string_pretty(&status)?);
+        }
+        GateCommands::Stop { run_dir, base_dir } => {
+            let response = gate_stop(GateStopArgs { run_dir, base_dir })?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
+    }
+
     Ok(())
 }
 
