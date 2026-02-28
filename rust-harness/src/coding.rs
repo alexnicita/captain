@@ -752,10 +752,9 @@ async fn run_cycle_hooks(
 
             let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
             let message = format!(
-                "{}(harness): {} [cycle {}]",
+                "{}(harness): {}",
                 commit_kind,
                 summarize_commit_focus(args.user_prompt.as_deref()),
-                cycle,
             );
             let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
             let commit_result =
