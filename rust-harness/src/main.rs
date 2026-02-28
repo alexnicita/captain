@@ -41,6 +41,7 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Run a single task through provider/tool orchestrator.
     Run {
