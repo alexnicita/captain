@@ -31,7 +31,14 @@ If you're migrating from Python-side orchestration helpers, see `MIGRATION.md`.
   - bounded-concurrency batch runner (configurable)
 - **Runtime-gate orchestration (Rust port)**
   - enforce minimum runtime + checklist completion gates
+  - reusable `RuntimeGate` primitive with deadline/remaining semantics
   - start/status/stop lifecycle with JSON state + progress logs
+- **Coding mode (timeboxed active execution)**
+  - canonical interface: `repo + time`
+  - iterative cycle engine (`plan -> act -> verify -> hooks`) until deadline
+  - trait-based `WorkExecutor` abstraction (provider/tool agnostic)
+  - built-in shell/cargo executor with command allowlist policy
+  - optional user-session prompt input (`--prompt` / `--prompt-file`) threaded into cycle context and logs
 - **Replay + eval baseline**
   - event taxonomy summaries
   - fixture-backed regression checks
@@ -61,6 +68,9 @@ agent-harness batch --objectives-file ./fixtures/objectives.txt
 # objectives format supports optional prefixes: [p1] high, [p0] normal
 agent-harness gate start --checklist ./fixtures/gate_checklist.done.md --dry-run --dry-runtime-sec 3 --dry-heartbeat-sec 1 --poll-seconds 1
 agent-harness gate status
+agent-harness code --repo /path/to/repo --time 1h
+agent-harness code --repo . --time 45m --executor shell --allow-cmd ls --plan-cmd "git status --short" --act-cmd "ls -la" --verify-cmd "git diff --stat"
+agent-harness code --repo . --time 1h --prompt "optional session prompt"
 agent-harness replay --path ./runs/events.jsonl
 agent-harness replay --path ./runs/events.jsonl --latest-run
 agent-harness eval --path ./runs/events.jsonl --run-id run-123
@@ -73,6 +83,8 @@ With cargo:
 cargo run -- status
 cargo run -- run --objective "what time is it"
 cargo run -- batch --objectives-file ./fixtures/objectives.txt
+cargo run -- code --repo . --time 1h
+cargo run -- code --repo . --time 1h --prompt "optional prompt"
 cargo run -- replay --path ./runs/events.jsonl --latest-run
 cargo run -- eval --path ./runs/events.jsonl --run-id run-123
 ```
@@ -101,23 +113,35 @@ Environment overrides:
 
 ## Canonical operator interface: time + repo
 
-For strict timeboxed execution against a target repository:
+For strict timeboxed coding execution against a target repository:
 
 ```bash
 bash ./scripts/harness.sh --repo /path/to/repo --time 1h
 ```
 
+Optional prompt plumbing (empty by default unless you provide one):
+
+```bash
+bash ./scripts/harness.sh --repo /path/to/repo --time 1h --prompt "your session prompt"
+```
+
 Also supports `--time 3600`, `--time 90m`, `--time 45s`.
 
-That script runs:
-1. toolchain checks
-2. `run` objective through orchestrator
-3. `replay` + `eval` for latest single-task run
-4. `batch` queue run through scheduler
-5. `replay` + `eval` for latest batch run
-6. `gate start/status` dry-run to validate Rust runtime-gate orchestration
+The script now executes **coding mode** directly (active plan/act/verify cycles), rather than idle runtime waiting.
 
-Use this flow continuously while extending modules.
+## Safety notes for coding mode
+
+- Commands run through an **allowlisted command policy** (`cargo`, `git` by default).
+- Add explicit extras with `--allow-cmd <tool>` for non-default executables.
+- `--push-each-cycle` is only valid when `--commit-each-cycle` is enabled.
+- Prompt input is optional and empty by default; no prompt content is hardcoded.
+- Prompt values are threaded into cycle context/logs and command env (`OPENCLAW_USER_PROMPT`) only when supplied.
+
+## Extensibility points
+
+- Implement additional executors by conforming to `WorkExecutor` (`plan/act/verify`).
+- Keep provider/tool integrations outside executor policy boundaries for portability.
+- Add new hook types by extending `run_cycle_hooks` and emitting `coding.cycle.hook` data.
 
 ## Contributor notes
 

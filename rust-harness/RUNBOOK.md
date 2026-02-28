@@ -23,7 +23,31 @@ cargo run -- --config ./config.local.toml batch --objectives-file ./fixtures/obj
 
 Use `[p1]` prefix for high-priority queue items in the objectives file.
 
-## 4) Runtime-gate checklist run (Rust)
+## 4) Timeboxed coding run (1 hour)
+
+```bash
+cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h
+```
+
+Optional prompt input (empty by default unless supplied):
+
+```bash
+cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h --prompt "<session prompt>"
+# or
+cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h --prompt-file ./prompt.txt
+```
+
+Useful flags:
+
+```bash
+--executor cargo|shell
+--plan-cmd "..." --act-cmd "..." --verify-cmd "..."   # repeatable
+--allow-cmd "<binary>"                                    # extends allowlist
+--commit-each-cycle --push-each-cycle
+--cycle-output-file ./runs/cycle-output.jsonl
+```
+
+## 5) Runtime-gate checklist run (Rust)
 
 ```bash
 cargo run -- gate start --checklist ./fixtures/gate_checklist.done.md --dry-run --dry-runtime-sec 3 --dry-heartbeat-sec 1 --poll-seconds 1
@@ -33,14 +57,14 @@ cargo run -- gate stop
 
 `gate status` now reports terminal-aware elapsed time (`elapsed_sec`), plus heartbeat freshness via `last_heartbeat_epoch` and `heartbeat_stale_sec`.
 
-## 5) Replay + eval
+## 6) Replay + eval
 
 ```bash
 cargo run -- --config ./config.local.toml replay --path ./runs/events.jsonl --latest-run
 cargo run -- --config ./config.local.toml eval --path ./runs/events.jsonl --latest-run
 ```
 
-## 6) Tool policy hardening examples
+## 7) Tool policy hardening examples
 
 Allow only `time.now`:
 
@@ -54,7 +78,7 @@ Block `echo` explicitly:
 cargo run -- run --objective "debug" --deny-tool echo
 ```
 
-## 7) Common failures
+## 8) Common failures
 
 - **`cargo not found`**: install rustup, then source `$HOME/.cargo/env`
 - **provider timeout**: increase `provider.timeout_ms`

@@ -31,7 +31,14 @@
   - queue primitives + bounded-concurrency batch execution
 - `runtime_gate.rs`
   - runtime/checklist gate control loop (`gate start|status|stop`)
+  - reusable `RuntimeGate` primitive (`deadline`, `remaining`, `open/active`)
   - JSON state + progress log lifecycle
+- `coding.rs`
+  - timeboxed coding loop command (`code --repo ... --time ...`)
+  - trait-based executor abstraction (`WorkExecutor`)
+  - shell/cargo command executor with allowlisted policy
+  - cycle hooks (task output + commit/push)
+  - optional user prompt plumbed through cycle context and logs
 - `events.rs`
   - event taxonomy constants
   - run IDs + sequence numbers
@@ -49,6 +56,8 @@
 - `tool.call`, `tool.output`, `tool.error`
 - `scheduler.dispatch`, `scheduler.result`, `scheduler.tick`
 - `cli.run.summary`, `cli.batch.summary`
+- `coding.run.started`, `coding.run.finished`, `coding.heartbeat`
+- `coding.cycle.started`, `coding.cycle.plan`, `coding.cycle.act`, `coding.cycle.verify`, `coding.cycle.hook`, `coding.cycle.finished`
 
 ## Design principles
 

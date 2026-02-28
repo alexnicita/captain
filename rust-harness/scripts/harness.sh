@@ -1,45 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# General-purpose harness entrypoint with the exact interface:
+# Canonical interface:
 #   --repo <path> --time <duration>
-#
-# Examples:
-#   scripts/harness.sh --repo /path/to/repo --time 1h
-#   scripts/harness.sh --repo . --time 3600
+# Optional:
+#   --prompt "..." | --prompt-file /path/to/prompt.txt
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_DIR=""
 TIME_INPUT=""
 HEARTBEAT_SEC=30
-POLL_SEC=5
+CYCLE_PAUSE_SEC=2
+EXECUTOR="cargo"
+PROMPT=""
+PROMPT_FILE=""
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/harness.sh --repo <path> --time <duration> [--heartbeat-sec N] [--poll-sec N]
+  scripts/harness.sh --repo <path> --time <duration> [options]
 
-Options:
-  --repo            Target repository path to operate on (required)
-  --time            Timebox duration: supports plain seconds (e.g. 3600) or suffixes s/m/h (e.g. 90m, 1h)
-  --heartbeat-sec   Heartbeat interval seconds (default: 30)
-  --poll-sec        Poll interval seconds (default: 5)
+Required:
+  --repo                Target repository path
+  --time                Duration (e.g. 3600, 45m, 1h)
+
+Optional:
+  --executor            cargo|shell (default: cargo)
+  --heartbeat-sec       Coding heartbeat interval (default: 30)
+  --cycle-pause-sec     Pause between cycles in seconds (default: 2)
+  --prompt              Optional user-session prompt string
+  --prompt-file         Optional path to prompt text file (conflicts with --prompt)
+
+Examples:
+  scripts/harness.sh --repo /path/to/repo --time 1h
+  scripts/harness.sh --repo . --time 45m --prompt "improve test coverage"
 EOF
-}
-
-to_seconds() {
-  local v="$1"
-  if [[ "$v" =~ ^[0-9]+$ ]]; then
-    echo "$v"; return 0
-  elif [[ "$v" =~ ^([0-9]+)s$ ]]; then
-    echo "${BASH_REMATCH[1]}"; return 0
-  elif [[ "$v" =~ ^([0-9]+)m$ ]]; then
-    echo "$(( ${BASH_REMATCH[1]} * 60 ))"; return 0
-  elif [[ "$v" =~ ^([0-9]+)h$ ]]; then
-    echo "$(( ${BASH_REMATCH[1]} * 3600 ))"; return 0
-  fi
-  echo "Invalid --time value: $v" >&2
-  return 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -48,10 +43,16 @@ while [[ $# -gt 0 ]]; do
       REPO_DIR="${2:-}"; shift 2 ;;
     --time)
       TIME_INPUT="${2:-}"; shift 2 ;;
+    --executor)
+      EXECUTOR="${2:-cargo}"; shift 2 ;;
     --heartbeat-sec)
       HEARTBEAT_SEC="${2:-30}"; shift 2 ;;
-    --poll-sec)
-      POLL_SEC="${2:-5}"; shift 2 ;;
+    --cycle-pause-sec)
+      CYCLE_PAUSE_SEC="${2:-2}"; shift 2 ;;
+    --prompt)
+      PROMPT="${2:-}"; shift 2 ;;
+    --prompt-file)
+      PROMPT_FILE="${2:-}"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -71,26 +72,41 @@ if [[ ! -d "$REPO_DIR" ]]; then
   exit 2
 fi
 
-RUNTIME_SEC="$(to_seconds "$TIME_INPUT")"
-# gate start currently accepts minute-based args
-RUNTIME_MIN="$(( (RUNTIME_SEC + 59) / 60 ))"
-HEARTBEAT_MIN="$(( (HEARTBEAT_SEC + 59) / 60 ))"
-STATE_DIR="$ROOT_DIR/runs/runtime-gate-$(date +%Y%m%d-%H%M%S)"
-CHECKLIST="$ROOT_DIR/fixtures/gate_checklist.done.md"
+if [[ -n "$PROMPT" && -n "$PROMPT_FILE" ]]; then
+  echo "Use either --prompt or --prompt-file, not both." >&2
+  exit 3
+fi
+
+"$ROOT_DIR/scripts/check_toolchain.sh"
+
+CMD=(
+  cargo run --manifest-path "$ROOT_DIR/Cargo.toml" --
+  --config "$ROOT_DIR/config.example.toml"
+  code
+  --repo "$REPO_DIR"
+  --time "$TIME_INPUT"
+  --executor "$EXECUTOR"
+  --heartbeat-sec "$HEARTBEAT_SEC"
+  --cycle-pause-sec "$CYCLE_PAUSE_SEC"
+)
+
+if [[ -n "$PROMPT" ]]; then
+  CMD+=(--prompt "$PROMPT")
+fi
+if [[ -n "$PROMPT_FILE" ]]; then
+  CMD+=(--prompt-file "$PROMPT_FILE")
+fi
 
 echo "[harness] repo=$REPO_DIR"
-echo "[harness] runtime_sec=$RUNTIME_SEC (min_runtime_minutes=$RUNTIME_MIN)"
-echo "[harness] heartbeat_sec=$HEARTBEAT_SEC (heartbeat_minutes=$HEARTBEAT_MIN)"
-echo "[harness] state_dir=$STATE_DIR"
+echo "[harness] time=$TIME_INPUT"
+echo "[harness] executor=$EXECUTOR"
+echo "[harness] heartbeat_sec=$HEARTBEAT_SEC cycle_pause_sec=$CYCLE_PAUSE_SEC"
+if [[ -n "$PROMPT" || -n "$PROMPT_FILE" ]]; then
+  echo "[harness] prompt=provided"
+else
+  echo "[harness] prompt=empty"
+fi
 
-# Execute from target repo context (the gate command itself currently does not accept --repo).
-pushd "$REPO_DIR" >/dev/null
-cargo run --manifest-path "$ROOT_DIR/Cargo.toml" -- gate start \
-  --checklist "$CHECKLIST" \
-  --min-runtime-minutes "$RUNTIME_MIN" \
-  --heartbeat-minutes "$HEARTBEAT_MIN" \
-  --poll-seconds "$POLL_SEC" \
-  --base-dir "$STATE_DIR"
-popd >/dev/null
+"${CMD[@]}"
 
 echo "[harness] completed"

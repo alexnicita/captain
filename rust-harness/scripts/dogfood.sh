@@ -18,6 +18,17 @@ cargo run -- --config ./config.example.toml batch --objectives-file ./fixtures/o
 cargo run -- --config ./config.example.toml replay --path ./runs/events.jsonl --latest-run
 cargo run -- --config ./config.example.toml eval --path ./runs/events.jsonl --latest-run
 
+# Coding mode path (short dry run)
+cargo run -- --config ./config.example.toml code \
+  --repo . \
+  --time 5s \
+  --executor shell \
+  --heartbeat-sec 2 \
+  --cycle-pause-sec 1 \
+  --plan-cmd "git status --short" \
+  --act-cmd "git status --short" \
+  --verify-cmd "git diff --stat"
+
 # Runtime gate path
 cargo run -- gate start \
   --checklist ./fixtures/gate_checklist.done.md \
