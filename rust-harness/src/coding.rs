@@ -327,6 +327,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "lock_file": lock_path.display().to_string(),
                     "error": err.to_string(),
                     "refusal": refusal,
+                    "fail_fast": true,
+                    "exit_code": 1,
                 })),
             )?;
             return Err(anyhow!(refusal));
@@ -426,7 +428,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         let mut phase_results = Vec::new();
 
         let forced_mutation_cycle = noop_streak >= noop_streak_limit;
-        let escalate_source = progress_memory.repeated_no_diff_cycles >= 2;
+        let escalate_source =
+            progress_memory.repeated_no_diff_cycles >= TASK_NO_DIFF_ESCALATION_THRESHOLD;
         let architecture_result = run_architecture_phase(
             &repo_path,
             &progress_memory,
@@ -857,8 +860,6 @@ async fn run_cycle_hooks(
     selected_task: Option<&FeatureTask>,
 ) -> Result<Vec<HookResult>> {
     let mut hooks = Vec::new();
-    let mut commit_subject: Option<String> = None;
-    let mut commit_message: Option<String> = None;
 
     if let Some(path) = output_path {
         let payload = json!({
@@ -1222,11 +1223,10 @@ async fn run_cycle_hooks(
         return Ok(hooks);
     }
 
-    let message = format!("{}(harness): {}", commit_kind, deduped_subject);
-    commit_subject = Some(deduped_subject.clone());
-    commit_message = Some(message.clone());
+    let commit_subject = deduped_subject;
+    let commit_message = format!("{}(harness): {}", commit_kind, commit_subject);
 
-    let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
+    let commit_cmd = format!("git commit -m {}", shell_words::quote(&commit_message));
     let commit_result = execute_command_line(WorkStage::Act, &commit_cmd, &hook_ctx, policy).await;
     let commit_detail = if commit_result.success {
         "git commit ok".to_string()
@@ -1239,8 +1239,8 @@ async fn run_cycle_hooks(
         cycle,
         commit_result.success,
         false,
-        commit_subject.as_deref(),
-        commit_message.as_deref(),
+        Some(commit_subject.as_str()),
+        Some(commit_message.as_str()),
         if commit_result.success {
             "ok"
         } else {
@@ -1261,8 +1261,8 @@ async fn run_cycle_hooks(
             cycle,
             false,
             true,
-            commit_subject.as_deref(),
-            commit_message.as_deref(),
+            Some(commit_subject.as_str()),
+            Some(commit_message.as_str()),
             "blocked",
             "push skipped because commit failed",
         )?;
@@ -1273,7 +1273,7 @@ async fn run_cycle_hooks(
         name: "commit".to_string(),
         success: true,
         skipped: false,
-        detail: message,
+        detail: commit_message.clone(),
     });
 
     if args.push_each_cycle || meaningful_cycle {
@@ -1289,8 +1289,8 @@ async fn run_cycle_hooks(
             cycle,
             push_result.success,
             false,
-            commit_subject.as_deref(),
-            commit_message.as_deref(),
+            Some(commit_subject.as_str()),
+            Some(commit_message.as_str()),
             if push_result.success { "ok" } else { "failed" },
             &push_detail,
         )?;
@@ -1317,8 +1317,8 @@ async fn run_cycle_hooks(
             cycle,
             true,
             true,
-            commit_subject.as_deref(),
-            commit_message.as_deref(),
+            Some(commit_subject.as_str()),
+            Some(commit_message.as_str()),
             "skipped",
             "push_each_cycle disabled and cycle not marked meaningful",
         )?;
@@ -1454,7 +1454,10 @@ fn rank_task_candidates(
     cycle: u64,
     escalate_source: bool,
 ) -> Vec<RankedTaskCandidate> {
-    let mut tasks = collect_doc_tasks(repo_path, escalate_source);
+    let doc_tasks = collect_doc_tasks(repo_path, escalate_source);
+    let has_doc_tasks = !doc_tasks.is_empty();
+
+    let mut tasks = doc_tasks;
     tasks.extend(internal_fallback_tasks());
 
     let mut ranked = Vec::new();
@@ -1481,7 +1484,13 @@ fn rank_task_candidates(
         let novelty = task_novelty_score(&task, progress, &history);
         let cooldown_penalty = (cooldown_remaining as i64) * 120;
         let repeat_penalty = (history.selected_count as i64) * 18;
-        let score = impact * 100 + novelty - cooldown_penalty - repeat_penalty;
+        let fallback_penalty =
+            if has_doc_tasks && task.id.starts_with("fallback::") && !escalate_source {
+                260
+            } else {
+                0
+            };
+        let score = impact * 100 + novelty - cooldown_penalty - repeat_penalty - fallback_penalty;
 
         ranked.push(RankedTaskCandidate {
             task,
@@ -2498,5 +2507,59 @@ mod tests {
         assert_eq!(hooks.len(), 2);
         let content = fs::read_to_string(output).unwrap();
         assert!(content.contains("ship this"));
+    }
+
+    #[test]
+    fn commit_subject_blocks_generic_templates_and_variants() {
+        assert!(commit_subject_is_generic(
+            "Build a generalizable pipeline — harness: coding cycle"
+        ));
+        assert!(commit_subject_is_generic("harness: coding cycle"));
+        assert!(commit_subject_is_generic("minor fixes"));
+        assert!(!commit_subject_is_generic(
+            "implement scoped code updates in src/coding.rs"
+        ));
+    }
+
+    #[test]
+    fn commit_subject_must_reference_changed_scope() {
+        let files = vec!["src/coding.rs".to_string(), "README.md".to_string()];
+        assert!(subject_mentions_changed_scope(
+            "implement scoped code updates in src/coding.rs",
+            &files
+        ));
+        assert!(!subject_mentions_changed_scope(
+            "improve workflow quality",
+            &files
+        ));
+    }
+
+    #[test]
+    fn ranking_applies_cooldown_to_recently_selected_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("ARCHITECTURE.md"),
+            "- [ ] Improve docs quality\n- [ ] Harden lock handling\n",
+        )
+        .unwrap();
+
+        let mut progress = TaskProgressMemory::default();
+        let first = select_next_feature_task_from_docs(dir.path(), &progress, 1, false).unwrap();
+        record_task_selection(&mut progress, &first, 1);
+
+        let second = select_next_feature_task_from_docs(dir.path(), &progress, 2, false).unwrap();
+        assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn second_lock_acquisition_fails_fast() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock_path = dir.path().join(".git/agent.lock");
+        let _lock = acquire_repo_run_lock(&lock_path).unwrap();
+        let err = match acquire_repo_run_lock(&lock_path) {
+            Ok(_) => panic!("second lock acquisition unexpectedly succeeded"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("run lock exists"));
     }
 }
