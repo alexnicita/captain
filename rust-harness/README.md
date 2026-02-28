@@ -62,7 +62,8 @@ agent-harness batch --objectives-file ./fixtures/objectives.txt
 agent-harness gate start --checklist ./fixtures/gate_checklist.done.md --dry-run --dry-runtime-sec 3 --dry-heartbeat-sec 1 --poll-seconds 1
 agent-harness gate status
 agent-harness replay --path ./runs/events.jsonl
-agent-harness eval --path ./runs/events.jsonl
+agent-harness replay --path ./runs/events.jsonl --latest-run
+agent-harness eval --path ./runs/events.jsonl --run-id run-123
 agent-harness loop --interval-seconds 60 --max-iterations 5 --objective "heartbeat time task"
 ```
 
@@ -72,8 +73,8 @@ With cargo:
 cargo run -- status
 cargo run -- run --objective "what time is it"
 cargo run -- batch --objectives-file ./fixtures/objectives.txt
-cargo run -- replay --path ./runs/events.jsonl
-cargo run -- eval --path ./runs/events.jsonl
+cargo run -- replay --path ./runs/events.jsonl --latest-run
+cargo run -- eval --path ./runs/events.jsonl --run-id run-123
 ```
 
 ## Config

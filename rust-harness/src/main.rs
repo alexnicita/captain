@@ -3,7 +3,7 @@ use agent_harness::eval::evaluate_replay;
 use agent_harness::events::{kinds, now_unix, EventSink, HarnessEvent};
 use agent_harness::orchestrator::{Orchestrator, TaskSpec};
 use agent_harness::provider::build_provider;
-use agent_harness::replay::replay_file;
+use agent_harness::replay::{replay_file_with_filter, ReplayFilter};
 use agent_harness::runtime_gate::{
     gate_start, gate_status, gate_stop, GateStartArgs, GateStatusArgs, GateStopArgs,
 };
@@ -72,11 +72,19 @@ enum Commands {
     Replay {
         #[arg(long)]
         path: Option<String>,
+        #[arg(long)]
+        run_id: Option<String>,
+        #[arg(long, default_value_t = false)]
+        latest_run: bool,
     },
     /// Run eval checks against event log.
     Eval {
         #[arg(long)]
         path: Option<String>,
+        #[arg(long)]
+        run_id: Option<String>,
+        #[arg(long, default_value_t = false)]
+        latest_run: bool,
     },
 }
 
@@ -139,8 +147,16 @@ async fn main() -> Result<()> {
         Commands::Batch { objectives_file } => batch_mode(&objectives_file, &cfg, &policy).await?,
         Commands::Gate { command } => gate_command(command).await?,
         Commands::Status => status(&cfg).await?,
-        Commands::Replay { path } => replay(path.as_deref(), &cfg).await?,
-        Commands::Eval { path } => eval(path.as_deref(), &cfg).await?,
+        Commands::Replay {
+            path,
+            run_id,
+            latest_run,
+        } => replay(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
+        Commands::Eval {
+            path,
+            run_id,
+            latest_run,
+        } => eval(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
     }
 
     Ok(())
@@ -366,16 +382,38 @@ async fn status(cfg: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-async fn replay(path: Option<&str>, cfg: &AppConfig) -> Result<()> {
+async fn replay(
+    path: Option<&str>,
+    run_id: Option<&str>,
+    latest_run: bool,
+    cfg: &AppConfig,
+) -> Result<()> {
     let p = path.unwrap_or(&cfg.event_log_path);
-    let summary = replay_file(p)?;
+    let summary = replay_file_with_filter(
+        p,
+        &ReplayFilter {
+            run_id: run_id.map(|s| s.to_string()),
+            latest_run,
+        },
+    )?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }
 
-async fn eval(path: Option<&str>, cfg: &AppConfig) -> Result<()> {
+async fn eval(
+    path: Option<&str>,
+    run_id: Option<&str>,
+    latest_run: bool,
+    cfg: &AppConfig,
+) -> Result<()> {
     let p = path.unwrap_or(&cfg.event_log_path);
-    let summary = replay_file(p)?;
+    let summary = replay_file_with_filter(
+        p,
+        &ReplayFilter {
+            run_id: run_id.map(|s| s.to_string()),
+            latest_run,
+        },
+    )?;
     let report = evaluate_replay(&summary);
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
