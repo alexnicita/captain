@@ -104,8 +104,15 @@ echo
     git -C "$WORKSPACE" status --short 2>/dev/null || true
 
     echo
-    echo "[Files changed in last 10 min under kb/]"
-    find "$KB_ROOT" -type f -mmin -10 2>/dev/null | sort | sed 's#^#  • #' || true
+    echo "[All workspace files changed in last 10 min]"
+    find "$WORKSPACE" \
+      -path "$WORKSPACE/.git" -prune -o \
+      -path "$WORKSPACE/node_modules" -prune -o \
+      -type f -mmin -10 -print 2>/dev/null | sort | sed 's#^#  • #' || true
+
+    echo
+    echo "[KB files changed in last 10 min]"
+    find "$KB_ROOT" -type f -mmin -10 2>/dev/null | sort | sed 's#^#  📚 #' || true
 
     echo
     echo "[PDFs touched in last 10 min]"
