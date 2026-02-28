@@ -883,17 +883,8 @@ async fn run_cycle_hooks(
             }
 
             let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
-            let subject = summarize_commit_focus(args.user_prompt.as_deref());
-            let message = if args.commit_message_prefix.trim().is_empty() {
-                format!("{}(harness): {}", commit_kind, subject)
-            } else {
-                format!(
-                    "{}(harness): {} — {}",
-                    commit_kind,
-                    subject,
-                    args.commit_message_prefix.trim()
-                )
-            };
+            let subject = summarize_commit_focus(repo_path, args.user_prompt.as_deref()).await;
+            let message = format!("{}(harness): {}", commit_kind, subject);
             let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
             let commit_result =
                 execute_command_line(WorkStage::Act, &commit_cmd, &hook_ctx, policy).await;
@@ -1136,26 +1127,52 @@ fn summarize_error(execution: &CommandExecution) -> String {
         .unwrap_or_else(|| "unknown error".to_string())
 }
 
-fn summarize_commit_focus(user_prompt: Option<&str>) -> String {
-    let default = "advance harness workflow".to_string();
-    let Some(prompt) = user_prompt else {
-        return default;
+async fn summarize_commit_focus(repo_path: &Path, user_prompt: Option<&str>) -> String {
+    let output = Command::new("git")
+        .arg("diff")
+        .arg("--cached")
+        .arg("--name-only")
+        .current_dir(repo_path)
+        .output()
+        .await;
+
+    let files: Vec<String> = match output {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .collect(),
+        _ => Vec::new(),
     };
 
-    let cleaned = prompt
-        .split_whitespace()
-        .take(10)
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .trim_matches(|c: char| c == '"' || c == '\'' || c == '.' || c == '!')
-        .to_string();
-
-    if cleaned.is_empty() {
-        default
-    } else {
-        cleaned
+    if files.iter().any(|f| f.starts_with("src/coding.rs")) {
+        return "improve coding loop behavior".to_string();
     }
+    if files.iter().any(|f| f.starts_with("src/main.rs")) {
+        return "refine CLI command handling".to_string();
+    }
+    if files.iter().any(|f| f.starts_with("scripts/")) {
+        return "improve harness scripts and tooling".to_string();
+    }
+    if files.iter().any(|f| {
+        f.ends_with("README.md") || f.ends_with("RUNBOOK.md") || f.ends_with("ARCHITECTURE.md")
+    }) {
+        return "update harness documentation".to_string();
+    }
+    if files
+        .iter()
+        .any(|f| f.contains("test") || f.contains("fixtures/"))
+    {
+        return "expand harness test coverage".to_string();
+    }
+
+    let prompt = user_prompt.unwrap_or_default().to_lowercase();
+    if prompt.contains("generalizable") || prompt.contains("other openclaw") {
+        return "improve harness portability".to_string();
+    }
+
+    "advance harness workflow".to_string()
 }
 
 async fn infer_commit_kind(repo_path: &Path, user_prompt: Option<&str>) -> String {
