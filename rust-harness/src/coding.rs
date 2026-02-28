@@ -751,8 +751,9 @@ async fn run_cycle_hooks(
             }
 
             let message = format!(
-                "{}: cycle {} - sync, conformance, cleanup",
-                args.commit_message_prefix, cycle,
+                "feat(harness): {} [cycle {}]",
+                summarize_commit_focus(args.user_prompt.as_deref()),
+                cycle,
             );
             let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
             let commit_result =
@@ -970,6 +971,28 @@ fn summarize_error(execution: &CommandExecution) -> String {
             }
         })
         .unwrap_or_else(|| "unknown error".to_string())
+}
+
+fn summarize_commit_focus(user_prompt: Option<&str>) -> String {
+    let default = "improve harness reliability".to_string();
+    let Some(prompt) = user_prompt else {
+        return default;
+    };
+
+    let cleaned = prompt
+        .split_whitespace()
+        .take(12)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'' || c == '.' || c == '!')
+        .to_lowercase();
+
+    if cleaned.is_empty() {
+        default
+    } else {
+        cleaned
+    }
 }
 
 async fn unresolved_conflicts(repo_path: &Path) -> Result<Vec<String>> {
