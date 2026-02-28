@@ -29,7 +29,19 @@ Things like:
 
 - Preferred voice: "Nova" (warm, slightly British)
 - Default speaker: Kitchen HomePod
+
+### Coding Stack Preference
+
+- Language order: Rust > Python > TypeScript > JavaScript
 ```
+
+## Local Preferences
+
+### Coding Stack Preference
+
+- Language order: **Rust > Python > TypeScript > JavaScript**
+- Default to Rust for new tooling when practical.
+- Fall back only when integration speed/constraints require it.
 
 ## Why Separate?
 
