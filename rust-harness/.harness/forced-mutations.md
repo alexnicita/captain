@@ -30,3 +30,4 @@
 - [ ] cycle 65: materialize 'Roadmap fallback: improve coding loop reliability' (internal_default)
 - [ ] cycle 67: materialize 'Roadmap fallback: improve coding loop reliability' (internal_default)
 - [ ] cycle 69: materialize 'Roadmap fallback: improve coding loop reliability' (internal_default)
+- [ ] cycle 71: materialize 'Roadmap fallback: improve coding loop reliability' (internal_default)
