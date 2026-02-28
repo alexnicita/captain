@@ -1087,31 +1087,26 @@ async fn run_architecture_phase(
         });
     }
 
-    let selected_task = select_next_feature_task_from_docs(repo_path, progress, escalate_source)
-        .unwrap_or(FeatureTask {
-            id: "fallback::internal_default::coding_loop_reliability".to_string(),
-            title: "Roadmap fallback: improve coding loop reliability".to_string(),
-            source: "internal_default".to_string(),
-            selected_line: "No roadmap bullet found; use reliability backlog".to_string(),
-        });
-
-    if force_mutation {
-        materialize_forced_mutation(repo_path, cycle, &selected_task)?;
-    }
+    let selected_task = if force_mutation {
+        select_forced_code_change_task(progress, cycle)
+    } else {
+        select_next_feature_task_from_docs(repo_path, progress, cycle, escalate_source)
+            .unwrap_or_else(|| select_forced_code_change_task(progress, cycle))
+    };
 
     Ok(PhaseResult {
         phase: CyclePhase::Architecture,
-        reason: "repo clean; select/build next feature task from internal roadmap/docs".to_string(),
+        reason: "repo clean; rank/select next feature task from internal roadmap/docs".to_string(),
         selected_task: Some(selected_task.clone()),
         success: true,
         result: if force_mutation {
             format!(
-                "selected task '{}' from {} with forced mutation materialization",
+                "forced concrete scoped code-change task '{}' ({}) after no-diff streak",
                 selected_task.title, selected_task.source
             )
         } else {
             format!(
-                "selected task '{}' from {}",
+                "selected ranked task '{}' from {}",
                 selected_task.title, selected_task.source
             )
         },
@@ -1121,17 +1116,81 @@ async fn run_architecture_phase(
 fn select_next_feature_task_from_docs(
     repo_path: &Path,
     progress: &TaskProgressMemory,
+    cycle: u64,
     escalate_source: bool,
 ) -> Option<FeatureTask> {
+    let mut ranked = rank_task_candidates(repo_path, progress, cycle, escalate_source);
+    ranked.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| a.task.id.cmp(&b.task.id))
+    });
+
+    ranked
+        .iter()
+        .find(|candidate| candidate.cooldown_remaining == 0 || escalate_source)
+        .map(|candidate| candidate.task.clone())
+        .or_else(|| ranked.first().map(|candidate| candidate.task.clone()))
+}
+
+fn rank_task_candidates(
+    repo_path: &Path,
+    progress: &TaskProgressMemory,
+    cycle: u64,
+    escalate_source: bool,
+) -> Vec<RankedTaskCandidate> {
+    let mut tasks = collect_doc_tasks(repo_path, escalate_source);
+    tasks.extend(internal_fallback_tasks());
+
+    let mut ranked = Vec::new();
+    for task in tasks {
+        if progress.completed_task_ids.contains(&task.id) {
+            continue;
+        }
+
+        let history = progress
+            .task_history
+            .get(&task.id)
+            .cloned()
+            .unwrap_or_default();
+        let cooldown_remaining = cooldown_remaining(cycle, history.last_selected_cycle);
+
+        if progress.attempted_task_ids.contains(&task.id)
+            && cooldown_remaining > 0
+            && !escalate_source
+        {
+            continue;
+        }
+
+        let impact = task_impact_score(&task);
+        let novelty = task_novelty_score(&task, progress, &history);
+        let cooldown_penalty = (cooldown_remaining as i64) * 120;
+        let repeat_penalty = (history.selected_count as i64) * 18;
+        let score = impact * 100 + novelty - cooldown_penalty - repeat_penalty;
+
+        ranked.push(RankedTaskCandidate {
+            task,
+            score,
+            impact,
+            novelty,
+            cooldown_remaining,
+        });
+    }
+
+    ranked
+}
+
+fn collect_doc_tasks(repo_path: &Path, escalate_source: bool) -> Vec<FeatureTask> {
     let primary = ["ARCHITECTURE.md", "README.md", "RUNBOOK.md", "MIGRATION.md"];
     let fallback_only = ["CONTRIBUTING.md"];
 
-    let mut candidates = primary.to_vec();
+    let mut files = primary.to_vec();
     if escalate_source {
-        candidates.extend(fallback_only);
+        files.extend(fallback_only);
     }
 
-    for file in candidates {
+    let mut tasks = Vec::new();
+    for file in files {
         let path = repo_path.join(file);
         let Ok(content) = fs::read_to_string(&path) else {
             continue;
@@ -1139,52 +1198,184 @@ fn select_next_feature_task_from_docs(
 
         for raw_line in content.lines() {
             let line = raw_line.trim();
-            if line.is_empty() {
+            if !looks_like_roadmap_task(line) {
                 continue;
             }
 
-            let roadmap_hint = line.to_ascii_lowercase();
-            let is_actionable = line.starts_with("- ")
-                || line.starts_with("*")
-                || line
-                    .chars()
-                    .next()
-                    .map(|ch| ch.is_ascii_digit())
-                    .unwrap_or(false);
-            let looks_like_roadmap = roadmap_hint.contains("planned")
-                || roadmap_hint.contains("next")
-                || roadmap_hint.contains("todo")
-                || roadmap_hint.contains("increment")
-                || roadmap_hint.contains("feature")
-                || roadmap_hint.contains("improve")
-                || roadmap_hint.contains("harden")
-                || line.starts_with("- [ ]");
-
-            if is_actionable && looks_like_roadmap {
-                let key = format!("{}::{}", file, line);
-                let task_id = format!("{}::{}", file, slugify_task_line(line));
-                if progress.completed_roadmap_lines.contains(&key)
-                    || progress.completed_task_ids.contains(&task_id)
-                    || progress.attempted_task_ids.contains(&task_id)
-                {
-                    continue;
-                }
-                return Some(FeatureTask {
-                    id: task_id,
-                    title: line
-                        .trim_start_matches('-')
-                        .trim_start_matches('*')
-                        .trim_start_matches("[ ]")
-                        .trim()
-                        .to_string(),
-                    source: file.to_string(),
-                    selected_line: line.to_string(),
-                });
-            }
+            let task_id = format!("{}::{}", file, slugify_task_line(line));
+            tasks.push(FeatureTask {
+                id: task_id,
+                title: line
+                    .trim_start_matches('-')
+                    .trim_start_matches('*')
+                    .trim_start_matches("[ ]")
+                    .trim()
+                    .to_string(),
+                source: file.to_string(),
+                selected_line: line.to_string(),
+            });
         }
     }
 
-    None
+    tasks
+}
+
+fn looks_like_roadmap_task(line: &str) -> bool {
+    if line.is_empty() {
+        return false;
+    }
+
+    let roadmap_hint = line.to_ascii_lowercase();
+    let is_actionable = line.starts_with("- ")
+        || line.starts_with("*")
+        || line
+            .chars()
+            .next()
+            .map(|ch| ch.is_ascii_digit())
+            .unwrap_or(false);
+    let looks_like_roadmap = roadmap_hint.contains("planned")
+        || roadmap_hint.contains("next")
+        || roadmap_hint.contains("todo")
+        || roadmap_hint.contains("increment")
+        || roadmap_hint.contains("feature")
+        || roadmap_hint.contains("improve")
+        || roadmap_hint.contains("harden")
+        || roadmap_hint.contains("fix")
+        || roadmap_hint.contains("refactor")
+        || line.starts_with("- [ ]");
+
+    is_actionable && looks_like_roadmap
+}
+
+fn internal_fallback_tasks() -> Vec<FeatureTask> {
+    vec![
+        FeatureTask {
+            id: "fallback::src/coding.rs::tighten-commit-subject-gate".to_string(),
+            title: "Tighten commit-subject quality gate in src/coding.rs".to_string(),
+            source: "src/coding.rs".to_string(),
+            selected_line: "Implement deterministic informative commit subjects for staged files"
+                .to_string(),
+        },
+        FeatureTask {
+            id: "fallback::src/coding.rs::improve-task-ranking".to_string(),
+            title: "Improve task ranking/cooldown logic in src/coding.rs".to_string(),
+            source: "src/coding.rs".to_string(),
+            selected_line: "Rank architecture tasks by impact and novelty; avoid repeats"
+                .to_string(),
+        },
+        FeatureTask {
+            id: "fallback::src/main.rs::strengthen-lock-observability".to_string(),
+            title: "Strengthen lock refusal observability in src/main.rs".to_string(),
+            source: "src/main.rs".to_string(),
+            selected_line: "Fail fast on concurrent runs with clear process exit reason"
+                .to_string(),
+        },
+    ]
+}
+
+fn select_forced_code_change_task(progress: &TaskProgressMemory, cycle: u64) -> FeatureTask {
+    let mut forced = internal_fallback_tasks()
+        .into_iter()
+        .filter(|task| task.source.starts_with("src/"))
+        .collect::<Vec<_>>();
+
+    forced.sort_by(|a, b| {
+        let ah = progress
+            .task_history
+            .get(&a.id)
+            .cloned()
+            .unwrap_or_default();
+        let bh = progress
+            .task_history
+            .get(&b.id)
+            .cloned()
+            .unwrap_or_default();
+
+        ah.selected_count
+            .cmp(&bh.selected_count)
+            .then_with(|| ah.last_selected_cycle.cmp(&bh.last_selected_cycle))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    let mut selected = forced.into_iter().next().unwrap_or(FeatureTask {
+        id: "fallback::src/coding.rs::recover-no-diff-streak".to_string(),
+        title: "Recover no-diff streak with scoped coding.rs change".to_string(),
+        source: "src/coding.rs".to_string(),
+        selected_line: "Apply a concrete code change to break no-diff streak".to_string(),
+    });
+
+    selected.id = format!("{}::forced-cycle-{}", selected.id, cycle);
+    selected
+}
+
+fn cooldown_remaining(cycle: u64, last_selected_cycle: u64) -> u64 {
+    if last_selected_cycle == 0 {
+        return 0;
+    }
+    let age = cycle.saturating_sub(last_selected_cycle);
+    TASK_SELECTION_COOLDOWN_CYCLES.saturating_sub(age)
+}
+
+fn task_novelty_score(
+    task: &FeatureTask,
+    progress: &TaskProgressMemory,
+    history: &TaskHistory,
+) -> i64 {
+    let mut score = 30i64;
+
+    if progress.attempted_task_ids.contains(&task.id) {
+        score -= 20;
+    }
+    if let Some(outcome) = history.last_outcome.as_deref() {
+        if outcome == "no_diff" {
+            score -= 15;
+        }
+    }
+
+    score - (history.selected_count as i64 * 4)
+}
+
+fn task_impact_score(task: &FeatureTask) -> i64 {
+    let mut score = if task.source.starts_with("src/") {
+        7
+    } else {
+        4
+    };
+    let text = format!("{} {}", task.title, task.selected_line).to_ascii_lowercase();
+
+    for keyword in [
+        "security",
+        "harden",
+        "fail",
+        "abort",
+        "lock",
+        "concurrency",
+        "correctness",
+    ] {
+        if text.contains(keyword) {
+            score += 3;
+        }
+    }
+    for keyword in [
+        "test",
+        "coverage",
+        "regression",
+        "observe",
+        "event",
+        "commit",
+        "push",
+    ] {
+        if text.contains(keyword) {
+            score += 2;
+        }
+    }
+    for keyword in ["docs", "readme", "runbook"] {
+        if text.contains(keyword) {
+            score += 1;
+        }
+    }
+
+    score
 }
 
 fn slugify_task_line(line: &str) -> String {
