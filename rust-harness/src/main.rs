@@ -89,7 +89,7 @@ enum Commands {
         commit_each_cycle: bool,
         #[arg(long, default_value_t = false)]
         push_each_cycle: bool,
-        #[arg(long, default_value = "harness: coding cycle")]
+        #[arg(long, hide = true, default_value = "")]
         commit_message_prefix: String,
         #[arg(long)]
         cycle_output_file: Option<String>,
