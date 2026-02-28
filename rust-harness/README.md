@@ -10,6 +10,7 @@ This project is intentionally **config-driven and pluggable**:
 - stay Rust-first (no Python runtime dependency for orchestration)
 
 See `ARCHITECTURE.md` for internals and extension points.
+If you're migrating from Python-side orchestration helpers, see `MIGRATION.md`.
 
 ## What ships now
 

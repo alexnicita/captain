@@ -39,6 +39,13 @@ fi
 rustup component add clippy rustfmt >/dev/null
 
 pushd "$ROOT_DIR" >/dev/null
+
+if find ./src -type f -name '*.py' | grep -q .; then
+  echo "[toolchain] rust-first guard failed: python files found under src/" >&2
+  find ./src -type f -name '*.py' >&2
+  exit 5
+fi
+
 cargo --version
 rustc --version
 cargo fmt --all --check
