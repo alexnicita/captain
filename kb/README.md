@@ -36,3 +36,17 @@ Execution-first repository for building and operating high-performance product a
 - **Systemize before scaling**: build repeatable delivery and sales loops before hiring heavily.
 - **Protect margins early**: weak pricing discipline compounds into fragile operations.
 - **Short feedback loops**: weekly operating reviews, monthly strategy checks, quarterly resets.
+
+## PDF Quote Digests
+
+Permanent quote digests generated from the downloaded PDF library, organized by category:
+
+- `sources/pdf-digests/elite-product-consultancies.md`
+- `sources/pdf-digests/consulting-delivery-systems.md`
+- `sources/pdf-digests/startup-strategy.md`
+- `sources/pdf-digests/product-studio-model.md`
+- `sources/pdf-digests/entrepreneurship-founder-operations.md`
+- `sources/pdf-digests/pricing-profit-optimization.md`
+
+Each digest includes per-PDF source URLs, 3–7 direct quotes with page references when determinable, and a curated “Best Quotes (Top 10)” section.
+
