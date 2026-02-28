@@ -5,3 +5,4 @@
 - [ ] cycle 10: materialize 'explicit `next` step' (README.md)
 - [ ] cycle 12: materialize 'Keep features provider-agnostic and config-driven.' (README.md)
 - [ ] cycle 14: materialize '`noop_streak_limit=3`: after 3 consecutive commit skips, next architecture/feature cycle forces a concrete mutation materialization; cycle fails if no diff is produced.' (RUNBOOK.md)
+- [ ] cycle 16: materialize 'Roadmap fallback: improve coding loop reliability' (internal_default)
