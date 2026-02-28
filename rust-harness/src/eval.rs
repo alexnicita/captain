@@ -25,8 +25,29 @@ pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
         detail: format!("total_events={}", summary.total_events),
     });
 
-    let started = summary.kinds.get(kinds::TASK_STARTED).copied().unwrap_or(0);
-    let finished = summary
+    let run_started = summary.kinds.get(kinds::RUN_STARTED).copied().unwrap_or(0);
+    let run_finished = summary.kinds.get(kinds::RUN_FINISHED).copied().unwrap_or(0);
+
+    checks.push(EvalCheck {
+        name: "has_run_started".to_string(),
+        pass: run_started > 0,
+        detail: format!("{}={run_started}", kinds::RUN_STARTED),
+    });
+
+    checks.push(EvalCheck {
+        name: "has_run_finished".to_string(),
+        pass: run_finished > 0,
+        detail: format!("{}={run_finished}", kinds::RUN_FINISHED),
+    });
+
+    checks.push(EvalCheck {
+        name: "run_finished_not_exceed_started".to_string(),
+        pass: run_finished <= run_started,
+        detail: format!("started={run_started}, finished={run_finished}"),
+    });
+
+    let task_started = summary.kinds.get(kinds::TASK_STARTED).copied().unwrap_or(0);
+    let task_finished = summary
         .kinds
         .get(kinds::TASK_FINISHED)
         .copied()
@@ -34,20 +55,20 @@ pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
 
     checks.push(EvalCheck {
         name: "has_task_started".to_string(),
-        pass: started > 0,
-        detail: format!("{}={started}", kinds::TASK_STARTED),
+        pass: task_started > 0,
+        detail: format!("{}={task_started}", kinds::TASK_STARTED),
     });
 
     checks.push(EvalCheck {
         name: "has_task_finished".to_string(),
-        pass: finished > 0,
-        detail: format!("{}={finished}", kinds::TASK_FINISHED),
+        pass: task_finished > 0,
+        detail: format!("{}={task_finished}", kinds::TASK_FINISHED),
     });
 
     checks.push(EvalCheck {
-        name: "finished_not_exceed_started".to_string(),
-        pass: finished <= started,
-        detail: format!("started={started}, finished={finished}"),
+        name: "task_finished_not_exceed_started".to_string(),
+        pass: task_finished <= task_started,
+        detail: format!("started={task_started}, finished={task_finished}"),
     });
 
     checks.push(EvalCheck {
@@ -56,6 +77,26 @@ pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
         detail: format!(
             "sequence_monotonic_per_run={}",
             summary.sequence_monotonic_per_run
+        ),
+    });
+
+    let selected_run_consistent = summary
+        .selected_run_id
+        .as_ref()
+        .map(|run_id| summary.run_ids.len() <= 1 && summary.run_ids.contains(run_id))
+        .unwrap_or(true);
+    checks.push(EvalCheck {
+        name: "selected_run_consistent".to_string(),
+        pass: selected_run_consistent,
+        detail: format!(
+            "selected_run_id={:?}, run_ids={}",
+            summary.selected_run_id,
+            summary
+                .run_ids
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",")
         ),
     });
 
@@ -123,6 +164,20 @@ mod tests {
             .checks
             .iter()
             .any(|c| c.name == "has_task_finished" && !c.pass));
+    }
+
+    #[test]
+    fn eval_fails_missing_run_finished() {
+        let content = r#"{"kind":"run.started","ts_unix":1,"run_id":"r1","seq":1}
+{"kind":"task.started","ts_unix":2,"run_id":"r1","seq":2,"task_id":"t1"}
+{"kind":"task.finished","ts_unix":3,"run_id":"r1","seq":3,"task_id":"t1"}
+"#;
+        let summary = replay_str(content).unwrap();
+        let report = evaluate_replay(&summary);
+        assert!(report
+            .checks
+            .iter()
+            .any(|c| c.name == "has_run_finished" && !c.pass));
     }
 
     #[test]
