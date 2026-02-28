@@ -102,9 +102,10 @@ Environment overrides:
 That script runs:
 1. toolchain checks
 2. `run` objective through orchestrator
-3. `replay` on generated event log
-4. `eval` regression checks on the same run
-5. `gate start/status` dry-run to validate Rust runtime-gate orchestration
+3. `replay` + `eval` for latest single-task run
+4. `batch` queue run through scheduler
+5. `replay` + `eval` for latest batch run
+6. `gate start/status` dry-run to validate Rust runtime-gate orchestration
 
 Use this flow continuously while extending modules.
 

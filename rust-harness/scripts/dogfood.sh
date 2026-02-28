@@ -7,9 +7,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 pushd "$ROOT_DIR" >/dev/null
 rm -f ./runs/events.jsonl
+
+# Single-task orchestrator path
 cargo run -- --config ./config.example.toml run --objective "harness self-check time"
-cargo run -- --config ./config.example.toml replay --path ./runs/events.jsonl
-cargo run -- --config ./config.example.toml eval --path ./runs/events.jsonl
+cargo run -- --config ./config.example.toml replay --path ./runs/events.jsonl --latest-run
+cargo run -- --config ./config.example.toml eval --path ./runs/events.jsonl --latest-run
+
+# Batch scheduler path
+cargo run -- --config ./config.example.toml batch --objectives-file ./fixtures/objectives.txt
+cargo run -- --config ./config.example.toml replay --path ./runs/events.jsonl --latest-run
+cargo run -- --config ./config.example.toml eval --path ./runs/events.jsonl --latest-run
+
+# Runtime gate path
 cargo run -- gate start \
   --checklist ./fixtures/gate_checklist.done.md \
   --dry-run \
