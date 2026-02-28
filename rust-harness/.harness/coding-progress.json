@@ -1,6 +1,7 @@
 {
   "completed_roadmap_lines": [
     "ARCHITECTURE.md::2. provider plugins behind feature flags",
-    "README.md::- guaranteed phase state machine per cycle: `architecture -> feature -> conformance -> cleanup -> pause` (repeats until deadline)"
+    "README.md::- guaranteed phase state machine per cycle: `architecture -> feature -> conformance -> cleanup -> pause` (repeats until deadline)",
+    "README.md::- when repo is clean, architecture phase selects/builds the next feature task from internal docs/roadmap before feature execution"
   ]
 }
