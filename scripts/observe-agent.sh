@@ -35,7 +35,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$USE_LATEST" -eq 1 ]]; then
-  TRANSCRIPT_FILE=$(ls -1t "$WORKSPACE"/*.jsonl 2>/dev/null | head -n1 || true)
+  # Prefer gateway session transcript store, fall back to workspace root.
+  TRANSCRIPT_FILE=$(ls -1t /home/ec2-user/.openclaw/agents/main/sessions/*.jsonl 2>/dev/null | head -n1 || true)
+  if [[ -z "$TRANSCRIPT_FILE" ]]; then
+    TRANSCRIPT_FILE=$(ls -1t "$WORKSPACE"/*.jsonl 2>/dev/null | head -n1 || true)
+  fi
 fi
 
 if [[ -z "$TRANSCRIPT_FILE" || ! -f "$TRANSCRIPT_FILE" ]]; then
