@@ -1,3 +1,4 @@
+use crate::config::ProviderConfig;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -71,5 +72,15 @@ impl Provider for HttpProviderStub {
             tool_call: None,
             done: false,
         })
+    }
+}
+
+pub fn build_provider(cfg: &ProviderConfig) -> Box<dyn Provider> {
+    match cfg.kind.as_str() {
+        "http-stub" => Box::new(HttpProviderStub {
+            endpoint: "http://localhost:11434/v1/chat/completions".to_string(),
+            model: cfg.model.clone(),
+        }),
+        _ => Box::new(EchoProvider),
     }
 }

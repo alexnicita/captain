@@ -2,6 +2,8 @@
 
 Rust-first autonomous harness skeleton focused on safe orchestration loops.
 
+See `ARCHITECTURE.md` for module layout and extension points.
+
 ## What ships now
 
 - **Provider abstraction** (`Provider` trait)
@@ -30,7 +32,7 @@ seaport-harness status
 seaport-harness run --objective "what time is it"
 seaport-harness replay --path ./runs/events.jsonl
 seaport-harness eval --path ./runs/events.jsonl
-seaport-harness loop --interval-seconds 60 --objective "heartbeat time task"
+seaport-harness loop --interval-seconds 60 --max-iterations 5 --objective "heartbeat time task"
 ```
 
 With cargo:

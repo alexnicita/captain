@@ -4,7 +4,7 @@ use seaport_harness::config::AppConfig;
 use seaport_harness::eval::evaluate_replay;
 use seaport_harness::events::{EventSink, HarnessEvent};
 use seaport_harness::orchestrator::{Orchestrator, TaskSpec};
-use seaport_harness::provider::{EchoProvider, HttpProviderStub, Provider};
+use seaport_harness::provider::build_provider;
 use seaport_harness::replay::replay_file;
 use seaport_harness::tools::ToolRegistry;
 use std::time::Duration;
@@ -36,6 +36,9 @@ enum Commands {
         interval_seconds: u64,
         #[arg(long, default_value = "heartbeat time task")]
         objective: String,
+        /// 0 = unbounded.
+        #[arg(long, default_value_t = 0)]
+        max_iterations: u32,
     },
     /// Print harness config and mode details.
     Status,
@@ -65,7 +68,8 @@ async fn main() -> Result<()> {
         Commands::Loop {
             interval_seconds,
             objective,
-        } => loop_mode(interval_seconds, objective, &cfg).await?,
+            max_iterations,
+        } => loop_mode(interval_seconds, objective, max_iterations, &cfg).await?,
         Commands::Status => status(&cfg).await?,
         Commands::Replay { path } => replay(path.as_deref(), &cfg).await?,
         Commands::Eval { path } => eval(path.as_deref(), &cfg).await?,
@@ -76,13 +80,7 @@ async fn main() -> Result<()> {
 
 async fn run_once(objective: String, cfg: &AppConfig) -> Result<()> {
     info!(%objective, "run_once start");
-    let provider: Box<dyn Provider> = match cfg.provider.kind.as_str() {
-        "http-stub" => Box::new(HttpProviderStub {
-            endpoint: "http://localhost:11434/v1/chat/completions".to_string(),
-            model: cfg.provider.model.clone(),
-        }),
-        _ => Box::new(EchoProvider),
-    };
+    let provider = build_provider(&cfg.provider);
 
     let tools = ToolRegistry::with_defaults();
     let sink = EventSink::new(&cfg.event_log_path)?;
@@ -109,12 +107,23 @@ async fn run_once(objective: String, cfg: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-async fn loop_mode(interval_seconds: u64, objective: String, cfg: &AppConfig) -> Result<()> {
-    warn!(interval_seconds, "loop mode active");
+async fn loop_mode(
+    interval_seconds: u64,
+    objective: String,
+    max_iterations: u32,
+    cfg: &AppConfig,
+) -> Result<()> {
+    warn!(interval_seconds, max_iterations, "loop mode active");
+    let mut count = 0u32;
     loop {
         run_once(objective.clone(), cfg).await?;
+        count += 1;
+        if max_iterations > 0 && count >= max_iterations {
+            break;
+        }
         sleep(Duration::from_secs(interval_seconds)).await;
     }
+    Ok(())
 }
 
 async fn status(cfg: &AppConfig) -> Result<()> {
