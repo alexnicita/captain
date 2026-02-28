@@ -89,8 +89,6 @@ enum Commands {
         commit_each_cycle: bool,
         #[arg(long, default_value_t = false)]
         push_each_cycle: bool,
-        #[arg(long, hide = true, default_value = "")]
-        commit_message_prefix: String,
         #[arg(long)]
         cycle_output_file: Option<String>,
         #[arg(long)]
@@ -204,7 +202,6 @@ async fn main() -> Result<()> {
             allow_cmd,
             commit_each_cycle,
             push_each_cycle,
-            commit_message_prefix,
             cycle_output_file,
             runtime_log_file,
             noop_streak_limit,
@@ -226,7 +223,6 @@ async fn main() -> Result<()> {
                 allow_cmd,
                 commit_each_cycle,
                 push_each_cycle,
-                commit_message_prefix,
                 cycle_output_file,
                 runtime_log_file,
                 noop_streak_limit,
@@ -469,7 +465,6 @@ struct CodingModeArgs {
     allow_cmd: Vec<String>,
     commit_each_cycle: bool,
     push_each_cycle: bool,
-    commit_message_prefix: String,
     cycle_output_file: Option<String>,
     runtime_log_file: Option<String>,
     noop_streak_limit: u64,
@@ -512,7 +507,6 @@ async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
         user_prompt,
         commit_each_cycle: args.commit_each_cycle,
         push_each_cycle: args.push_each_cycle,
-        commit_message_prefix: args.commit_message_prefix,
         cycle_output_file: args.cycle_output_file,
         runtime_log_file: args.runtime_log_file,
         noop_streak_limit: args.noop_streak_limit,
