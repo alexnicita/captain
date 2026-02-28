@@ -1,6 +1,6 @@
 use crate::config::OrchestratorConfig;
-use crate::events::{HarnessEvent, EventSink};
-use crate::provider::{Provider, ProviderRequest};
+use crate::events::{EventSink, HarnessEvent};
+use crate::provider::{Provider, ProviderRequest, ProviderResponse};
 use crate::tools::ToolRegistry;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -104,5 +104,52 @@ impl<'a> Orchestrator<'a> {
             stopped_reason,
             transcript,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct DoneProvider;
+
+    impl Provider for DoneProvider {
+        fn name(&self) -> &'static str {
+            "done"
+        }
+
+        fn generate(&self, req: &ProviderRequest) -> Result<ProviderResponse> {
+            Ok(ProviderResponse {
+                message: format!("ok: {}", req.objective),
+                tool_call: None,
+                done: true,
+            })
+        }
+    }
+
+    #[test]
+    fn run_task_stops_on_provider_done() {
+        let provider = DoneProvider;
+        let tools = ToolRegistry::with_defaults();
+        let sink = EventSink::new("./tmp/test-events.jsonl").unwrap();
+        let orchestrator = Orchestrator {
+            provider: &provider,
+            tools: &tools,
+            cfg: OrchestratorConfig {
+                max_steps: 4,
+                max_tool_calls: 2,
+                max_runtime_seconds: 5,
+            },
+            event_sink: &sink,
+        };
+
+        let summary = orchestrator
+            .run_task(TaskSpec {
+                id: "t1".to_string(),
+                objective: "test".to_string(),
+            })
+            .unwrap();
+        assert_eq!(summary.stopped_reason, "provider_done");
+        assert_eq!(summary.steps, 1);
     }
 }

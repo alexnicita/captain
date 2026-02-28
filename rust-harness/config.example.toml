@@ -1,0 +1,10 @@
+event_log_path = "./runs/events.jsonl"
+
+[provider]
+kind = "echo"
+model = "local-stub"
+
+[orchestrator]
+max_steps = 8
+max_tool_calls = 8
+max_runtime_seconds = 60

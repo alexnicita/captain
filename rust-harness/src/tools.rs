@@ -55,3 +55,16 @@ impl ToolRegistry {
         handler(input)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dispatches_default_tool() {
+        let reg = ToolRegistry::with_defaults();
+        let out = reg.dispatch("echo", serde_json::json!({"a": 1})).unwrap();
+        assert!(out.ok);
+        assert_eq!(out.content["echo"]["a"], 1);
+    }
+}

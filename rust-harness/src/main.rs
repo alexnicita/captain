@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use seaport_harness::config::AppConfig;
+use seaport_harness::eval::evaluate_replay;
 use seaport_harness::events::{EventSink, HarnessEvent};
 use seaport_harness::orchestrator::{Orchestrator, TaskSpec};
 use seaport_harness::provider::{EchoProvider, HttpProviderStub, Provider};
@@ -43,6 +44,11 @@ enum Commands {
         #[arg(long)]
         path: Option<String>,
     },
+    /// Run basic eval checks against event log.
+    Eval {
+        #[arg(long)]
+        path: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -62,6 +68,7 @@ async fn main() -> Result<()> {
         } => loop_mode(interval_seconds, objective, &cfg).await?,
         Commands::Status => status(&cfg).await?,
         Commands::Replay { path } => replay(path.as_deref(), &cfg).await?,
+        Commands::Eval { path } => eval(path.as_deref(), &cfg).await?,
     }
 
     Ok(())
@@ -119,5 +126,13 @@ async fn replay(path: Option<&str>, cfg: &AppConfig) -> Result<()> {
     let p = path.unwrap_or(&cfg.event_log_path);
     let summary = replay_file(p)?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+async fn eval(path: Option<&str>, cfg: &AppConfig) -> Result<()> {
+    let p = path.unwrap_or(&cfg.event_log_path);
+    let summary = replay_file(p)?;
+    let report = evaluate_replay(&summary);
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
