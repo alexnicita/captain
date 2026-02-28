@@ -174,6 +174,7 @@ pub struct HookResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 struct TaskProgressMemory {
     completed_roadmap_lines: BTreeSet<String>,
     attempted_task_ids: BTreeSet<String>,
@@ -181,6 +182,15 @@ struct TaskProgressMemory {
     repeated_no_diff_task_id: Option<String>,
     repeated_no_diff_cycles: u64,
     source_escalation_count: u64,
+    task_history: BTreeMap<String, TaskHistory>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+struct TaskHistory {
+    selected_count: u64,
+    last_selected_cycle: u64,
+    last_outcome: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
