@@ -445,9 +445,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         )?;
         let selected_task = architecture_result.selected_task.clone();
         if let Some(task) = selected_task.as_ref() {
-            if progress_memory.attempted_task_ids.insert(task.id.clone()) {
-                save_progress_memory(&progress_path, &progress_memory)?;
-            }
+            record_task_selection(&mut progress_memory, task, cycles_total);
+            save_progress_memory(&progress_path, &progress_memory)?;
         }
         phase_results.push(architecture_result.clone());
 
@@ -556,6 +555,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         )?;
         phase_results.push(conformance_result.clone());
 
+        let pending_before_hooks = pending_file_names(&repo_path).await;
+        let meaningful_diff_this_cycle =
+            commit_has_meaningful_scope(&pending_before_hooks, selected_task.as_ref());
+
         let hook_results = run_cycle_hooks(
             &sink,
             &cycle_id,
@@ -565,7 +568,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             output_path.as_deref(),
             user_prompt.as_deref(),
             executor.policy(),
-            mutated_this_cycle,
+            meaningful_diff_this_cycle,
             verify_result.success,
             selected_task.as_ref(),
         )
@@ -595,34 +598,33 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 .with_data(json!({ "hooks": hook_results })),
         )?;
 
-        let commit_skipped = hook_results.iter().any(|h| h.name == "commit" && h.skipped);
-        if commit_skipped {
-            noop_streak = noop_streak.saturating_add(1);
-        } else {
+        if meaningful_diff_this_cycle {
             noop_streak = 0;
+        } else {
+            noop_streak = noop_streak.saturating_add(1);
         }
         counters.noop_streak = noop_streak;
 
         if forced_mutation_cycle {
             counters.forced_mutation = counters.forced_mutation.saturating_add(1);
-            if !mutated_this_cycle {
+            if !meaningful_diff_this_cycle {
                 sink.emit(
                     &HarnessEvent::new(kinds::TASK_FINISHED)
                         .with_task_id(cycle_id.clone())
                         .with_data(json!({
                             "mode": "coding",
                             "cycle": cycles_total,
-                            "reason": "forced_mutation_no_diff",
+                            "reason": "forced_scoped_task_no_meaningful_diff",
                             "runtime_ms": cycle_start.elapsed().as_millis() as u64,
                         })),
                 )?;
                 return Err(anyhow!(
-                    "forced mutation cycle produced no diff; failing cycle as configured"
+                    "forced scoped code-change task produced no meaningful diff; aborting run"
                 ));
             }
         }
 
-        if mutated_this_cycle {
+        if meaningful_diff_this_cycle {
             unchanged_since_conformance = 0;
             if let Some(task) = selected_task.clone() {
                 let task_key = format!("{}::{}", task.source, task.selected_line);
@@ -630,13 +632,14 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 if progress_memory.completed_roadmap_lines.insert(task_key) {
                     advanced = true;
                 }
-                if progress_memory.completed_task_ids.insert(task.id) {
+                if progress_memory.completed_task_ids.insert(task.id.clone()) {
                     advanced = true;
                 }
                 progress_memory.repeated_no_diff_task_id = None;
                 progress_memory.repeated_no_diff_cycles = 0;
+                record_task_outcome(&mut progress_memory, &task.id, "meaningful_diff");
+                save_progress_memory(&progress_path, &progress_memory)?;
                 if advanced {
-                    save_progress_memory(&progress_path, &progress_memory)?;
                     counters.task_advanced = counters.task_advanced.saturating_add(1);
                 }
             }
@@ -649,10 +652,11 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     progress_memory.repeated_no_diff_task_id = Some(task.id.clone());
                     progress_memory.repeated_no_diff_cycles = 1;
                 }
-                if progress_memory.repeated_no_diff_cycles > 2 {
+                if progress_memory.repeated_no_diff_cycles > TASK_NO_DIFF_ESCALATION_THRESHOLD {
                     progress_memory.source_escalation_count =
                         progress_memory.source_escalation_count.saturating_add(1);
                 }
+                record_task_outcome(&mut progress_memory, &task.id, "no_diff");
                 save_progress_memory(&progress_path, &progress_memory)?;
             }
 
@@ -1123,6 +1127,8 @@ fn select_next_feature_task_from_docs(
     ranked.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
+            .then_with(|| b.impact.cmp(&a.impact))
+            .then_with(|| b.novelty.cmp(&a.novelty))
             .then_with(|| a.task.id.cmp(&b.task.id))
     });
 
@@ -1376,6 +1382,21 @@ fn task_impact_score(task: &FeatureTask) -> i64 {
     }
 
     score
+}
+
+fn record_task_selection(progress: &mut TaskProgressMemory, task: &FeatureTask, cycle: u64) {
+    progress.attempted_task_ids.insert(task.id.clone());
+    let history = progress.task_history.entry(task.id.clone()).or_default();
+    history.selected_count = history.selected_count.saturating_add(1);
+    history.last_selected_cycle = cycle;
+}
+
+fn record_task_outcome(progress: &mut TaskProgressMemory, task_id: &str, outcome: &str) {
+    let history = progress
+        .task_history
+        .entry(task_id.to_string())
+        .or_default();
+    history.last_outcome = Some(outcome.to_string());
 }
 
 fn slugify_task_line(line: &str) -> String {
