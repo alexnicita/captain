@@ -1,5 +1,0 @@
-[2026-02-28T20:11:26.297133+00:00] START pid=52391 checklist=/home/ec2-user/.openclaw/workspace/harness/checklist.test.md min_runtime_sec=20 heartbeat_sec=5
-[2026-02-28T20:11:26.297349+00:00] HEARTBEAT elapsed_sec=0 remaining_sec=20 checklist_done=2/2 gate_open=False all_done=True
-[2026-02-28T20:11:41.307344+00:00] HEARTBEAT elapsed_sec=15 remaining_sec=5 checklist_done=2/2 gate_open=False all_done=True
-[2026-02-28T20:11:56.322810+00:00] HEARTBEAT elapsed_sec=30 remaining_sec=0 checklist_done=2/2 gate_open=True all_done=True
-[2026-02-28T20:11:56.322924+00:00] COMPLETE criteria satisfied elapsed_sec=30 checklist=2/2
