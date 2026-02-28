@@ -750,8 +750,10 @@ async fn run_cycle_hooks(
                 return Ok(hooks);
             }
 
+            let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
             let message = format!(
-                "feat(harness): {} [cycle {}]",
+                "{}(harness): {} [cycle {}]",
+                commit_kind,
                 summarize_commit_focus(args.user_prompt.as_deref()),
                 cycle,
             );
@@ -974,7 +976,7 @@ fn summarize_error(execution: &CommandExecution) -> String {
 }
 
 fn summarize_commit_focus(user_prompt: Option<&str>) -> String {
-    let default = "improve harness reliability".to_string();
+    let default = "automated harness update".to_string();
     let Some(prompt) = user_prompt else {
         return default;
     };
@@ -993,6 +995,68 @@ fn summarize_commit_focus(user_prompt: Option<&str>) -> String {
     } else {
         cleaned
     }
+}
+
+async fn infer_commit_kind(repo_path: &Path, user_prompt: Option<&str>) -> String {
+    let prompt_lc = user_prompt.unwrap_or_default().to_lowercase();
+
+    if ["fix", "bug", "error", "regression", "hotfix"]
+        .iter()
+        .any(|k| prompt_lc.contains(k))
+    {
+        return "fix".to_string();
+    }
+    if ["test", "tests", "coverage"]
+        .iter()
+        .any(|k| prompt_lc.contains(k))
+    {
+        return "test".to_string();
+    }
+    if ["refactor", "cleanup", "clean up"]
+        .iter()
+        .any(|k| prompt_lc.contains(k))
+    {
+        return "refactor".to_string();
+    }
+    if ["docs", "readme", "runbook", "documentation"]
+        .iter()
+        .any(|k| prompt_lc.contains(k))
+    {
+        return "docs".to_string();
+    }
+
+    let output = Command::new("git")
+        .arg("diff")
+        .arg("--cached")
+        .arg("--name-only")
+        .current_dir(repo_path)
+        .output()
+        .await;
+
+    let files: Vec<String> = match output {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    if !files.is_empty() && files.iter().all(|f| f.ends_with(".md")) {
+        return "docs".to_string();
+    }
+    if files
+        .iter()
+        .any(|f| f.contains("test") || f.contains("fixtures/"))
+    {
+        return "test".to_string();
+    }
+    if files.iter().any(|f| f.starts_with("src/")) {
+        return "feat".to_string();
+    }
+
+    "chore".to_string()
 }
 
 async fn unresolved_conflicts(repo_path: &Path) -> Result<Vec<String>> {
