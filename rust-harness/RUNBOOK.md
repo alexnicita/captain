@@ -108,3 +108,6 @@ cargo run -- run --objective "debug" --deny-tool echo
 - **provider timeout**: increase `provider.timeout_ms`
 - **excess retries**: lower `provider.max_retries` or validate endpoint/auth
 - **empty replay**: confirm `event_log_path` and file permissions
+- **`coding.lock.exists`**: another coding run already owns the lock; stop it first (or remove stale lock if process is gone).
+- **forced no-diff abort**: your act phase is not producing meaningful scoped changes; tighten `--act-cmd` and validate with `git diff --stat`.
+- **commit subject rejected by quality gate**: subject was generic or lacked changed-file scope; inspect staged names and commit event payload (`subject`, `detail`).
