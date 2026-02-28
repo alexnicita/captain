@@ -751,10 +751,9 @@ async fn run_cycle_hooks(
             }
 
             let message = format!(
-                "{} cycle {} at {}",
+                "{}: cycle {} - sync, conformance, cleanup",
                 args.commit_message_prefix,
                 cycle,
-                now_unix()
             );
             let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
             let commit_result =
