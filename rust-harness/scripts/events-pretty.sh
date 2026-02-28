@@ -20,51 +20,79 @@ tail -F "$EVENTS_FILE" | jq -r '
   def d: (.data // {});
 
   if .kind=="coding.phase" then
-    "\n["+ts+"] 🧩 PHASE: "+(d.phase|trunc(40))+"\n"
-    +"  run: "+rid+"\n"
-    +"  reason: "+(d.reason|trunc(140))+"\n"
-    +"  task: "+(d.selected_task|trunc(160))+"\n"
-    +"  result: "+(d.result|trunc(140))+"\n"
-    +"  next: "+(d.next|trunc(140))
+    "harness: coding phase="+(d.phase|trunc(40))
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
+    +" reason='"+(d.reason|trunc(120))+"'"
+    +" task='"+(d.selected_task|trunc(120))+"'"
+    +" next='"+(d.next|trunc(120))+"'"
 
   elif .kind=="coding.cycle.started" then
-    "\n["+ts+"] 🧠 CYCLE #"+((d.cycle // "?")|tostring)+" START\n"
-    +"  run: "+rid+"\n"
-    +"  executor: "+((d.executor // "?")|tostring)+"\n"
-    +"  remaining: "+((d.remaining_sec // "?")|tostring)+"s\n"
-    +"  prompt: "+(if (d.prompt_provided // false) then "provided" else "none" end)
+    "harness: coding cycle start"
+    +" cycle="+((d.cycle // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
+    +" remaining_sec="+((d.remaining_sec // "?")|tostring)
+    +" executor="+((d.executor // "?")|tostring)
 
   elif .kind=="coding.cycle.plan" or .kind=="coding.cycle.act" or .kind=="coding.cycle.verify" then
-    "["+ts+"] "
-    + (if .kind=="coding.cycle.plan" then "🗺️ PLAN" elif .kind=="coding.cycle.act" then "⚙️ ACT" else "✅ VERIFY" end)
-    +" cycle #"+((d.cycle // "?")|tostring)
-    +" | ok="+((d.success // "?")|tostring)
+    "harness: coding cycle stage"
+    +" stage="+(if .kind=="coding.cycle.plan" then "plan" elif .kind=="coding.cycle.act" then "act" else "verify" end)
+    +" cycle="+((d.cycle // "?")|tostring)
+    +" ok="+((d.success // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   elif .kind=="git.fetch" then
-    "["+ts+"] 🔄 GIT FETCH | ok="+((d.success // "?")|tostring)+" | out="+(d.stdout_tail|trunc(120))
+    "harness: git fetch"
+    +" ok="+((d.success // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   elif .kind=="git.pull" then
-    "["+ts+"] ⬇️ GIT PULL | ok="+((d.success // "?")|tostring)+" | conflict="+((d.conflict // false)|tostring)+" | out="+(d.stdout_tail|trunc(120))
+    "harness: git pull"
+    +" ok="+((d.success // "?")|tostring)
+    +" conflict="+((d.conflict // false)|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   elif .kind=="git.commit" then
-    "\n["+ts+"] 📦 COMMIT\n"
-    +"  sha: "+((d.sha // "?")|tostring)+"\n"
-    +"  message: "+(d.message|trunc(160))
+    "harness: git commit"
+    +" sha="+((d.sha // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
+    +" message='"+(d.message|trunc(140))+"'"
 
   elif .kind=="git.push" then
-    "["+ts+"] 🚀 PUSH | ok="+((d.success // "?")|tostring)+" | remote="+((d.remote // "origin")|tostring)+" | branch="+((d.branch // "master")|tostring)
+    "harness: git push"
+    +" ok="+((d.success // "?")|tostring)
+    +" remote="+((d.remote // "origin")|tostring)
+    +" branch="+((d.branch // "master")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   elif .kind=="coding.heartbeat" or .kind=="run.heartbeat" then
-    "["+ts+"] 💓 HEARTBEAT | cycles="+((d.cycles_total // "?")|tostring)+" | elapsed="+((d.elapsed_sec // "?")|tostring)+"s | remaining="+((d.remaining_sec // "?")|tostring)+"s"
+    "harness: coding heartbeat"
+    +" cycles="+((d.cycles_total // "?")|tostring)
+    +" elapsed_sec="+((d.elapsed_sec // "?")|tostring)
+    +" remaining_sec="+((d.remaining_sec // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   elif .kind=="coding.cycle.finished" then
-    "["+ts+"] 🏁 CYCLE #"+((d.cycle // "?")|tostring)+" DONE | ok="+((d.success // "?")|tostring)+" | runtime="+((d.runtime_ms // "?")|tostring)+"ms"
+    "harness: coding cycle finish"
+    +" cycle="+((d.cycle // "?")|tostring)
+    +" ok="+((d.success // "?")|tostring)
+    +" runtime_ms="+((d.runtime_ms // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   elif .kind=="run.finished" then
-    "\n["+ts+"] ✅ RUN FINISHED\n"
-    +"  run: "+rid+"\n"
-    +"  status: "+((d.status // "done")|tostring)+"\n"
-    +"  total_cycles: "+((d.cycles_total // "?")|tostring)
+    "harness: run finished"
+    +" status="+((d.status // "done")|tostring)
+    +" total_cycles="+((d.cycles_total // "?")|tostring)
+    +" run="+rid
+    +" ts="+((.ts_unix // .epoch // 0)|tostring)
 
   else
     empty
