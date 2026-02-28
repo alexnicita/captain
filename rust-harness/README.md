@@ -99,6 +99,16 @@ Environment overrides:
 ./scripts/dogfood.sh
 ```
 
+## Canonical operator interface: time + repo
+
+For strict timeboxed execution against a target repository:
+
+```bash
+bash ./scripts/harness.sh --repo /path/to/repo --time 1h
+```
+
+Also supports `--time 3600`, `--time 90m`, `--time 45s`.
+
 That script runs:
 1. toolchain checks
 2. `run` objective through orchestrator
