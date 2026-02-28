@@ -92,6 +92,8 @@ enum Commands {
         commit_message_prefix: String,
         #[arg(long)]
         cycle_output_file: Option<String>,
+        #[arg(long)]
+        runtime_log_file: Option<String>,
         #[arg(long, conflicts_with = "prompt_file")]
         prompt: Option<String>,
         #[arg(long, conflicts_with = "prompt")]
@@ -195,6 +197,7 @@ async fn main() -> Result<()> {
             push_each_cycle,
             commit_message_prefix,
             cycle_output_file,
+            runtime_log_file,
             prompt,
             prompt_file,
         } => {
@@ -212,6 +215,7 @@ async fn main() -> Result<()> {
                 push_each_cycle,
                 commit_message_prefix,
                 cycle_output_file,
+                runtime_log_file,
                 prompt,
                 prompt_file,
             };
@@ -450,6 +454,7 @@ struct CodingModeArgs {
     push_each_cycle: bool,
     commit_message_prefix: String,
     cycle_output_file: Option<String>,
+    runtime_log_file: Option<String>,
     prompt: Option<String>,
     prompt_file: Option<String>,
 }
@@ -488,6 +493,7 @@ async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
         push_each_cycle: args.push_each_cycle,
         commit_message_prefix: args.commit_message_prefix,
         cycle_output_file: args.cycle_output_file,
+        runtime_log_file: args.runtime_log_file,
         event_log_path: cfg.event_log_path.clone(),
     })
     .await?;

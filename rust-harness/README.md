@@ -35,9 +35,11 @@ If you're migrating from Python-side orchestration helpers, see `MIGRATION.md`.
   - start/status/stop lifecycle with JSON state + progress logs
 - **Coding mode (timeboxed active execution)**
   - canonical interface: `repo + time`
-  - iterative cycle engine (`plan -> act -> verify -> hooks`) until deadline
+  - guaranteed phase state machine per cycle: `architecture -> feature -> conformance -> cleanup -> pause` (repeats until deadline)
+  - when repo is clean, architecture phase selects/builds the next feature task from internal docs/roadmap before feature execution
   - trait-based `WorkExecutor` abstraction (provider/tool agnostic)
   - built-in shell/cargo executor with command allowlist policy
+  - human-readable phase events (`coding.phase`) include phase, reason, selected task, and result
   - optional user-session prompt input (`--prompt` / `--prompt-file`) threaded into cycle context and logs
 - **Replay + eval baseline**
   - event taxonomy summaries
@@ -133,9 +135,26 @@ The script now executes **coding mode** directly (active plan/act/verify cycles)
 
 - Commands run through an **allowlisted command policy** (`cargo`, `git` by default).
 - Add explicit extras with `--allow-cmd <tool>` for non-default executables.
-- `--push-each-cycle` is only valid when `--commit-each-cycle` is enabled.
+- Every meaningful cleanup cycle attempts git sync (`fetch` + `pull`), commit, and push (with explicit event/log status).
 - Prompt input is optional and empty by default; no prompt content is hardcoded.
 - Prompt values are threaded into cycle context/logs and command env (`OPENCLAW_USER_PROMPT`) only when supplied.
+
+## Human-readable runtime stream format
+
+Pass `--runtime-log-file` in coding mode to emit a first-class operator stream with entries shaped like:
+
+- timestamp (`[unix_epoch]`)
+- phase label (`architecture|feature|conformance|cleanup|pause`)
+- concise bullets (`reason`, selected task, result)
+- explicit `next` step
+
+Cleanup logs include git sync outcomes each cycle:
+
+- `git_fetch`: success/failure
+- `git_pull`: clean merge vs conflict/failure
+- `conflict_resolution`: unresolved conflict status
+- `commit` summary
+- `push` outcome
 
 ## Extensibility points
 

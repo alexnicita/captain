@@ -37,6 +37,7 @@ pub struct CodingRunArgs {
     pub push_each_cycle: bool,
     pub commit_message_prefix: String,
     pub cycle_output_file: Option<String>,
+    pub runtime_log_file: Option<String>,
     pub event_log_path: String,
 }
 
@@ -85,6 +86,44 @@ pub enum WorkStage {
     Plan,
     Act,
     Verify,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CyclePhase {
+    Architecture,
+    Feature,
+    Conformance,
+    Cleanup,
+    Pause,
+}
+
+impl CyclePhase {
+    fn label(self) -> &'static str {
+        match self {
+            CyclePhase::Architecture => "architecture",
+            CyclePhase::Feature => "feature",
+            CyclePhase::Conformance => "conformance",
+            CyclePhase::Cleanup => "cleanup",
+            CyclePhase::Pause => "pause",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureTask {
+    pub title: String,
+    pub source: String,
+    pub selected_line: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseResult {
+    pub phase: CyclePhase,
+    pub reason: String,
+    pub selected_task: Option<FeatureTask>,
+    pub success: bool,
+    pub result: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,9 +221,6 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     if args.heartbeat_sec == 0 {
         return Err(anyhow!("heartbeat interval must be > 0"));
     }
-    if args.push_each_cycle && !args.commit_each_cycle {
-        return Err(anyhow!("push_each_cycle requires commit_each_cycle=true"));
-    }
 
     let repo_path = PathBuf::from(&args.repo_path);
     if !repo_path.exists() || !repo_path.is_dir() {
@@ -199,10 +235,11 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         .map(ToOwned::to_owned);
 
     let output_path = resolve_output_file(&repo_path, args.cycle_output_file.as_deref())?;
+    let runtime_log_path = resolve_output_file(&repo_path, args.runtime_log_file.as_deref())?;
     let executor = build_executor(&args)?;
-    if args.commit_each_cycle && !executor.policy().allows("git") {
+    if !executor.policy().allows("git") {
         return Err(anyhow!(
-            "commit_each_cycle requires git in allowlist (--allow-cmd git)"
+            "coding cycle requires git in allowlist for mandatory cleanup commit/push"
         ));
     }
 
@@ -287,34 +324,104 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 })),
         )?;
 
-        let plan_result = executor.plan(&ctx).await;
+        let mut phase_results = Vec::new();
+
+        let architecture_result = run_architecture_phase(&repo_path).await?;
+        emit_phase_event(
+            &sink,
+            runtime_log_path.as_deref(),
+            &cycle_id,
+            cycles_total,
+            architecture_result.clone(),
+            "feature",
+        )?;
+        let selected_task = architecture_result.selected_task.clone();
+        phase_results.push(architecture_result.clone());
+
+        let plan_result = if architecture_result.success {
+            executor.plan(&ctx).await
+        } else {
+            StageResult::skipped(WorkStage::Plan, "architecture phase failed")
+        };
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_PLAN)
                 .with_task_id(cycle_id.clone())
                 .with_data(serde_json::to_value(&plan_result)?),
         )?;
 
-        let act_result = if plan_result.success {
+        let feature_reason = selected_task
+            .as_ref()
+            .map(|task| format!("executing selected roadmap task '{}'", task.title))
+            .unwrap_or_else(|| {
+                "executing feature phase from current working tree state".to_string()
+            });
+        let act_result = if architecture_result.success && plan_result.success {
             executor.act(&ctx).await
         } else {
-            StageResult::skipped(WorkStage::Act, "plan stage failed")
+            StageResult::skipped(WorkStage::Act, "architecture/plan stage failed")
         };
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_ACT)
                 .with_task_id(cycle_id.clone())
                 .with_data(serde_json::to_value(&act_result)?),
         )?;
+        let feature_result = PhaseResult {
+            phase: CyclePhase::Feature,
+            reason: feature_reason,
+            selected_task: selected_task.clone(),
+            success: act_result.success,
+            result: if act_result.success {
+                "feature phase completed".to_string()
+            } else {
+                act_result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "feature phase failed".to_string())
+            },
+        };
+        emit_phase_event(
+            &sink,
+            runtime_log_path.as_deref(),
+            &cycle_id,
+            cycles_total,
+            feature_result.clone(),
+            "conformance",
+        )?;
+        phase_results.push(feature_result);
 
         let verify_result = if plan_result.success && act_result.success {
             executor.verify(&ctx).await
         } else {
-            StageResult::skipped(WorkStage::Verify, "act stage failed")
+            StageResult::skipped(WorkStage::Verify, "feature stage failed")
         };
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_VERIFY)
                 .with_task_id(cycle_id.clone())
                 .with_data(serde_json::to_value(&verify_result)?),
         )?;
+        let conformance_result = PhaseResult {
+            phase: CyclePhase::Conformance,
+            reason: "run conformance checks for current cycle".to_string(),
+            selected_task: selected_task.clone(),
+            success: verify_result.success,
+            result: if verify_result.success {
+                "conformance checks passed".to_string()
+            } else {
+                verify_result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "conformance checks failed".to_string())
+            },
+        };
+        emit_phase_event(
+            &sink,
+            runtime_log_path.as_deref(),
+            &cycle_id,
+            cycles_total,
+            conformance_result.clone(),
+            "cleanup",
+        )?;
+        phase_results.push(conformance_result.clone());
 
         let mut hook_results = Vec::new();
         if verify_result.success {
@@ -325,6 +432,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 output_path.as_deref(),
                 user_prompt.as_deref(),
                 executor.policy(),
+                true,
             )
             .await?;
         } else if output_path.is_some() {
@@ -336,13 +444,32 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             });
         }
 
+        let cleanup_success = hook_results.iter().all(|hook| hook.success || hook.skipped);
+        let cleanup_result = PhaseResult {
+            phase: CyclePhase::Cleanup,
+            reason: "run cleanup hooks (output + commit/push when meaningful)".to_string(),
+            selected_task: selected_task.clone(),
+            success: cleanup_success,
+            result: summarize_hooks(&hook_results),
+        };
+        emit_phase_event(
+            &sink,
+            runtime_log_path.as_deref(),
+            &cycle_id,
+            cycles_total,
+            cleanup_result.clone(),
+            "pause",
+        )?;
+        phase_results.push(cleanup_result);
+
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_HOOK)
                 .with_task_id(cycle_id.clone())
                 .with_data(json!({ "hooks": hook_results })),
         )?;
 
-        let cycle_success = plan_result.success
+        let cycle_success = phase_results.iter().all(|phase| phase.success)
+            && plan_result.success
             && act_result.success
             && verify_result.success
             && hook_results.iter().all(|hook| hook.success || hook.skipped);
@@ -366,7 +493,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_FINISHED)
-                .with_task_id(cycle_id)
+                .with_task_id(cycle_id.clone())
                 .with_data(json!({
                     "cycle": cycles_total,
                     "success": cycle_success,
@@ -375,8 +502,30 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 })),
         )?;
 
-        if gate.is_active_at(now_unix()) && args.cycle_pause_sec > 0 {
-            sleep(Duration::from_secs(args.cycle_pause_sec)).await;
+        if gate.is_active_at(now_unix()) {
+            let pause_result = PhaseResult {
+                phase: CyclePhase::Pause,
+                reason: "mandatory cycle pause before next architecture phase".to_string(),
+                selected_task,
+                success: true,
+                result: if args.cycle_pause_sec > 0 {
+                    format!("slept {}s", args.cycle_pause_sec)
+                } else {
+                    "no sleep configured".to_string()
+                },
+            };
+            emit_phase_event(
+                &sink,
+                runtime_log_path.as_deref(),
+                &cycle_id,
+                cycles_total,
+                pause_result,
+                "architecture",
+            )?;
+
+            if args.cycle_pause_sec > 0 {
+                sleep(Duration::from_secs(args.cycle_pause_sec)).await;
+            }
         }
     }
 
@@ -495,6 +644,7 @@ async fn run_cycle_hooks(
     output_path: Option<&Path>,
     user_prompt: Option<&str>,
     policy: &CommandPolicy,
+    meaningful_cycle: bool,
 ) -> Result<Vec<HookResult>> {
     let mut hooks = Vec::new();
 
@@ -514,12 +664,66 @@ async fn run_cycle_hooks(
         });
     }
 
-    if args.commit_each_cycle {
+    let should_commit_and_push = args.commit_each_cycle || meaningful_cycle;
+
+    if should_commit_and_push {
         let hook_ctx = CycleContext {
             cycle,
             repo_path: repo_path.to_path_buf(),
             user_prompt: user_prompt.map(ToOwned::to_owned),
         };
+
+        let fetch_result =
+            execute_command_line(WorkStage::Act, "git fetch --all --prune", &hook_ctx, policy)
+                .await;
+        hooks.push(HookResult {
+            name: "git_fetch".to_string(),
+            success: fetch_result.success,
+            skipped: false,
+            detail: if fetch_result.success {
+                "git fetch completed".to_string()
+            } else {
+                format!("git fetch failed: {}", summarize_error(&fetch_result))
+            },
+        });
+        if !fetch_result.success {
+            return Ok(hooks);
+        }
+
+        let pull_result =
+            execute_command_line(WorkStage::Act, "git pull --ff-only", &hook_ctx, policy).await;
+        let conflict_files = unresolved_conflicts(repo_path).await.unwrap_or_default();
+        let pull_conflict = !pull_result.success && !conflict_files.is_empty();
+        hooks.push(HookResult {
+            name: "git_pull".to_string(),
+            success: pull_result.success,
+            skipped: false,
+            detail: if pull_result.success {
+                "git pull merged cleanly".to_string()
+            } else if pull_conflict {
+                format!(
+                    "git pull conflict; unresolved files: {}",
+                    conflict_files.join(", ")
+                )
+            } else {
+                format!("git pull failed: {}", summarize_error(&pull_result))
+            },
+        });
+
+        hooks.push(HookResult {
+            name: "conflict_resolution".to_string(),
+            success: conflict_files.is_empty(),
+            skipped: false,
+            detail: if conflict_files.is_empty() {
+                "no unresolved conflicts".to_string()
+            } else {
+                format!("unresolved conflicts remain: {}", conflict_files.join(", "))
+            },
+        });
+
+        if !pull_result.success || !conflict_files.is_empty() {
+            return Ok(hooks);
+        }
 
         let dirty = repo_dirty(repo_path)
             .await
@@ -572,24 +776,188 @@ async fn run_cycle_hooks(
                 detail: message,
             });
 
-            if args.push_each_cycle {
-                let push_result =
-                    execute_command_line(WorkStage::Act, "git push", &hook_ctx, policy).await;
-                hooks.push(HookResult {
-                    name: "push".to_string(),
-                    success: push_result.success,
-                    skipped: false,
-                    detail: if push_result.success {
-                        "git push ok".to_string()
-                    } else {
-                        format!("git push failed: {}", summarize_error(&push_result))
-                    },
+            let push_result =
+                execute_command_line(WorkStage::Act, "git push", &hook_ctx, policy).await;
+            hooks.push(HookResult {
+                name: "push".to_string(),
+                success: push_result.success,
+                skipped: false,
+                detail: if push_result.success {
+                    "git push ok".to_string()
+                } else {
+                    format!("git push failed: {}", summarize_error(&push_result))
+                },
+            });
+        }
+    }
+
+    Ok(hooks)
+}
+
+async fn run_architecture_phase(repo_path: &Path) -> Result<PhaseResult> {
+    let dirty = repo_dirty(repo_path)
+        .await
+        .with_context(|| "failed to inspect git status during architecture phase")?;
+
+    if dirty {
+        return Ok(PhaseResult {
+            phase: CyclePhase::Architecture,
+            reason: "repo has pending changes; continue current feature thread".to_string(),
+            selected_task: None,
+            success: true,
+            result: "working tree already dirty; reuse in-flight feature task".to_string(),
+        });
+    }
+
+    let selected_task = select_next_feature_task_from_docs(repo_path).unwrap_or(FeatureTask {
+        title: "Roadmap fallback: improve coding loop reliability".to_string(),
+        source: "internal_default".to_string(),
+        selected_line: "No roadmap bullet found; use reliability backlog".to_string(),
+    });
+
+    Ok(PhaseResult {
+        phase: CyclePhase::Architecture,
+        reason: "repo clean; select/build next feature task from internal roadmap/docs".to_string(),
+        selected_task: Some(selected_task.clone()),
+        success: true,
+        result: format!(
+            "selected task '{}' from {}",
+            selected_task.title, selected_task.source
+        ),
+    })
+}
+
+fn select_next_feature_task_from_docs(repo_path: &Path) -> Option<FeatureTask> {
+    let candidates = ["ARCHITECTURE.md", "README.md", "RUNBOOK.md", "MIGRATION.md"];
+    for file in candidates {
+        let path = repo_path.join(file);
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+
+        for raw_line in content.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let roadmap_hint = line.to_ascii_lowercase();
+            let is_actionable = line.starts_with("- ")
+                || line.starts_with("*")
+                || line
+                    .chars()
+                    .next()
+                    .map(|ch| ch.is_ascii_digit())
+                    .unwrap_or(false);
+            let looks_like_roadmap = roadmap_hint.contains("planned")
+                || roadmap_hint.contains("next")
+                || roadmap_hint.contains("todo")
+                || roadmap_hint.contains("increment")
+                || roadmap_hint.contains("feature")
+                || line.starts_with("- [ ]");
+
+            if is_actionable && looks_like_roadmap {
+                return Some(FeatureTask {
+                    title: line
+                        .trim_start_matches('-')
+                        .trim_start_matches('*')
+                        .trim_start_matches("[ ]")
+                        .trim()
+                        .to_string(),
+                    source: file.to_string(),
+                    selected_line: line.to_string(),
                 });
             }
         }
     }
 
-    Ok(hooks)
+    None
+}
+
+fn emit_phase_event(
+    sink: &EventSink,
+    runtime_log_path: Option<&Path>,
+    cycle_id: &str,
+    cycle: u64,
+    result: PhaseResult,
+    next_step: &str,
+) -> Result<()> {
+    let data = json!({
+        "cycle": cycle,
+        "phase": result.phase.label(),
+        "reason": result.reason,
+        "selected_task": result.selected_task,
+        "success": result.success,
+        "result": result.result,
+        "next": next_step,
+    });
+
+    sink.emit(
+        &HarnessEvent::new(kinds::CODING_PHASE)
+            .with_task_id(cycle_id.to_string())
+            .with_data(data.clone()),
+    )?;
+
+    if let Some(path) = runtime_log_path {
+        append_runtime_log(path, cycle, result.phase, &data)?;
+    }
+
+    Ok(())
+}
+
+fn append_runtime_log(
+    path: &Path,
+    cycle: u64,
+    phase: CyclePhase,
+    data: &serde_json::Value,
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let ts = now_unix();
+    let reason = data.get("reason").and_then(|v| v.as_str()).unwrap_or("n/a");
+    let result = data.get("result").and_then(|v| v.as_str()).unwrap_or("n/a");
+    let next = data.get("next").and_then(|v| v.as_str()).unwrap_or("n/a");
+    let selected_task = data
+        .get("selected_task")
+        .and_then(|v| v.get("title"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(
+        file,
+        "[{ts}] phase={} cycle={}\n- reason: {}\n- task: {}\n- result: {}\n- next: {}\n",
+        phase.label(),
+        cycle,
+        reason,
+        selected_task,
+        result,
+        next
+    )?;
+
+    Ok(())
+}
+
+fn summarize_hooks(hooks: &[HookResult]) -> String {
+    if hooks.is_empty() {
+        return "no hooks executed".to_string();
+    }
+
+    hooks
+        .iter()
+        .map(|hook| {
+            if hook.skipped {
+                format!("{}: skipped ({})", hook.name, hook.detail)
+            } else if hook.success {
+                format!("{}: ok ({})", hook.name, hook.detail)
+            } else {
+                format!("{}: failed ({})", hook.name, hook.detail)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn summarize_error(execution: &CommandExecution) -> String {
@@ -604,6 +972,31 @@ fn summarize_error(execution: &CommandExecution) -> String {
             }
         })
         .unwrap_or_else(|| "unknown error".to_string())
+}
+
+async fn unresolved_conflicts(repo_path: &Path) -> Result<Vec<String>> {
+    let output = Command::new("git")
+        .arg("diff")
+        .arg("--name-only")
+        .arg("--diff-filter=U")
+        .current_dir(repo_path)
+        .output()
+        .await
+        .context("git diff --name-only --diff-filter=U failed")?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "git diff for conflict status failed: {}",
+            truncate_tail(String::from_utf8_lossy(&output.stderr).as_ref())
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
 }
 
 async fn repo_dirty(repo_path: &Path) -> Result<bool> {
@@ -920,6 +1313,7 @@ mod tests {
             push_each_cycle: false,
             commit_message_prefix: "test".to_string(),
             cycle_output_file: Some(output.display().to_string()),
+            runtime_log_file: None,
             event_log_path: dir.path().join("events.jsonl").display().to_string(),
         };
 
@@ -930,6 +1324,7 @@ mod tests {
             Some(output.as_path()),
             args.user_prompt.as_deref(),
             &policy,
+            false,
         )
         .await
         .unwrap();

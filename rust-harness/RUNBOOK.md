@@ -45,7 +45,16 @@ Useful flags:
 --allow-cmd "<binary>"                                    # extends allowlist
 --commit-each-cycle --push-each-cycle
 --cycle-output-file ./runs/cycle-output.jsonl
+--runtime-log-file ./runs/coding-runtime.log
 ```
+
+Coding mode guarantees the phase order each cycle:
+
+`architecture -> feature -> conformance -> cleanup -> pause`
+
+If the repo is clean at architecture phase, the harness selects the next feature task from internal docs (`ARCHITECTURE.md`, `README.md`, `RUNBOOK.md`, `MIGRATION.md`) before running feature work.
+
+Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_resolution`, `commit`, `push`) so operators can see clean merges vs conflicts and unresolved/conflict-resolution status.
 
 ## 5) Runtime-gate checklist run (Rust)
 

@@ -14,6 +14,7 @@ CYCLE_PAUSE_SEC=2
 EXECUTOR="cargo"
 PROMPT=""
 PROMPT_FILE=""
+RUNTIME_LOG_FILE=""
 
 usage() {
   cat <<'EOF'
@@ -30,6 +31,7 @@ Optional:
   --cycle-pause-sec     Pause between cycles in seconds (default: 2)
   --prompt              Optional user-session prompt string
   --prompt-file         Optional path to prompt text file (conflicts with --prompt)
+  --runtime-log-file    Optional human-readable phase stream output
 
 Examples:
   scripts/harness.sh --repo /path/to/repo --time 1h
@@ -53,6 +55,8 @@ while [[ $# -gt 0 ]]; do
       PROMPT="${2:-}"; shift 2 ;;
     --prompt-file)
       PROMPT_FILE="${2:-}"; shift 2 ;;
+    --runtime-log-file)
+      RUNTIME_LOG_FILE="${2:-}"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -95,6 +99,9 @@ if [[ -n "$PROMPT" ]]; then
 fi
 if [[ -n "$PROMPT_FILE" ]]; then
   CMD+=(--prompt-file "$PROMPT_FILE")
+fi
+if [[ -n "$RUNTIME_LOG_FILE" ]]; then
+  CMD+=(--runtime-log-file "$RUNTIME_LOG_FILE")
 fi
 
 echo "[harness] repo=$REPO_DIR"

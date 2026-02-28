@@ -57,7 +57,7 @@
 - `scheduler.dispatch`, `scheduler.result`, `scheduler.tick`
 - `cli.run.summary`, `cli.batch.summary`
 - `coding.run.started`, `coding.run.finished`, `coding.heartbeat`
-- `coding.cycle.started`, `coding.cycle.plan`, `coding.cycle.act`, `coding.cycle.verify`, `coding.cycle.hook`, `coding.cycle.finished`
+- `coding.cycle.started`, `coding.cycle.plan`, `coding.cycle.act`, `coding.cycle.verify`, `coding.cycle.hook`, `coding.cycle.finished`, `coding.phase`
 
 ## Design principles
 

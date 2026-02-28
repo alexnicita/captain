@@ -33,6 +33,7 @@ pub mod kinds {
     pub const CODING_CYCLE_VERIFY: &str = "coding.cycle.verify";
     pub const CODING_CYCLE_HOOK: &str = "coding.cycle.hook";
     pub const CODING_CYCLE_FINISHED: &str = "coding.cycle.finished";
+    pub const CODING_PHASE: &str = "coding.phase";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
