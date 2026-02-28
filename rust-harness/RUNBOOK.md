@@ -61,14 +61,14 @@ If the repo is clean at architecture phase, the harness selects the next feature
 Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_resolution`, `commit`, `push`) so operators can see clean merges vs conflicts and unresolved/conflict-resolution status.
 
 Hard anti-noop controls (defaults):
-- `noop_streak_limit=3`: after 3 consecutive commit skips, next architecture/feature cycle forces a concrete mutation materialization; cycle fails if no diff is produced.
+- `noop_streak_limit=3`: after 3 no-meaningful-diff cycles, the next architecture cycle forces a concrete scoped code-change task. If that forced cycle still has no meaningful diff, the run aborts explicitly.
 - `conformance_interval_unchanged=3`: full conformance runs every 3 unchanged cycles, but always runs immediately when mutations exist.
-- Single-instance per repo lock: lock file prevents concurrent coding runs on the same repo and emits `coding.lock.exists` with a refusal message (and `coding.lock.acquired` on success).
-- Progress memory persists completed+attempted task ids (`.harness/coding-progress.json`) so architecture selection advances instead of repeating.
+- Single-instance per repo lock: lock file prevents concurrent coding runs on the same repo and emits `coding.lock.exists` with fail-fast metadata (`fail_fast=true`, `exit_code=1`) and `coding.lock.acquired` on success.
+- Progress memory persists completed+attempted ids and task history (`.harness/coding-progress.json`) so ranking can score novelty + impact with cooldown.
 - If the same task repeats with no net diff for >2 cycles, task selection escalates to alternate sources.
-- Commit quality gate blocks fallback/materialization-only diffs unless `src/` or task-tied docs changed.
-- Commit subject quality gate enforces conventional + informative file-aware subjects, blocks generic templated text, and de-duplicates short-window repeats.
-- Explicit git lifecycle events are emitted: `git.commit`, `git.push`.
+- Commit quality gate blocks internal-state-only diffs unless `src/` or task-tied docs changed.
+- Commit subject quality gate enforces conventional + informative file-aware subjects, hard-blocks generic templated text, requires changed-scope tokens, and de-duplicates short-window repeats.
+- Explicit git lifecycle events are emitted on every path: `git.commit`, `git.push` (success/skip/blocked/failure) including subject/result metadata.
 - Counters are emitted every cycle: `noop_streak`, `forced_mutation`, `task_advanced`, `source_escalation`.
 
 ## 5) Runtime-gate checklist run (Rust)
