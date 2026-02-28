@@ -89,13 +89,18 @@ review_by: 2026-03-15
 - If source access is blocked (login/paywall), capture it in `sources/access-notes.md` and downgrade confidence.
 - Keep identity disambiguation explicit when names are non-unique.
 
-## Discovery Fallback Order (for reproducibility)
-1. `tools/parallel-search.js` (preferred discovery path when `PARALLEL_API_KEY` exists).
+## Discovery Stack (current, validated on 2026-02-28 rerun)
+1. `tools/parallel-search.js` (primary broad discovery path; key-backed and working).
 2. First-party machine-readable assets (`sitemap.xml`, `rss.xml`, JSON indexes, public APIs).
-3. Search engine HTML snapshots (e.g., Brave SERP pages) with explicit snippet-risk labeling.
-4. Direct page extraction (`web_fetch`) and source-level checks (`curl`) when readability parsers fail.
+3. `web_fetch` extraction for article-level support and quote verification.
+4. Snippet/contextual evidence only when direct extraction is blocked (must be marked Tier C).
 
-Record which layer produced each claim so future reruns are comparable.
+## Rerun Quality Checklist
+- [ ] Every claim explicitly labeled `verified_fact` or `assumption/inference`.
+- [ ] Every claim has at least one citation URL.
+- [ ] Confidence attached per claim (High/Medium/Low).
+- [ ] Identity-linking claims call out ambiguity risk.
+- [ ] Social-platform data blocked by crawler is marked as constrained/contextual.
 
 ## Immediate Next Expansion Priorities
 1. Build `intelligence/facts.md` and `intelligence/assumptions.md` from latest dossier.
