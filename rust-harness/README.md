@@ -24,6 +24,17 @@ See `ARCHITECTURE.md` for module layout and extension points.
   - Replay event file into aggregate summary
   - Basic eval checks for run health
 
+## Toolchain + local build checks
+
+Run user-space readiness checks (no root assumptions):
+
+```bash
+./scripts/check_toolchain.sh
+./scripts/build.sh
+```
+
+If Rust is missing, the checker prints rustup bootstrap commands.
+
 ## CLI
 
 ```bash
