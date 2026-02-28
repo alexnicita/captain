@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Local research scratch
+tmp_research/
+
+# Local memory/private notes
+memory/
+MEMORY.md
+
+# Local-generated assets
+avatars/
+
+# Local package scaffolding
+package.json
+package-lock.json
+
+# OpenClaw local runtime state
+.openclaw/

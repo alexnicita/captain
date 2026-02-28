@@ -6,8 +6,32 @@
  *   PARALLEL_API_KEY=... node tools/parallel-search.js --query "..." --count 5
  */
 
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
 const API_URL = "https://api.parallel.ai/v1beta/search";
 const BETA_HEADER = "search-extract-2025-10-10";
+
+function loadApiKey() {
+  if (process.env.PARALLEL_API_KEY) return process.env.PARALLEL_API_KEY.trim();
+
+  const candidates = [
+    path.join(os.homedir(), ".openclaw", "credentials", "parallel_api_key"),
+    path.join(os.homedir(), ".parallel_api_key"),
+  ];
+
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        const v = fs.readFileSync(p, "utf8").trim();
+        if (v) return v;
+      }
+    } catch {}
+  }
+
+  return "";
+}
 
 function parseArgs(argv) {
   const out = { count: 10, mode: "one-shot", maxCharsPerResult: 4000 };
@@ -40,9 +64,9 @@ async function main() {
     process.exit(args.help ? 0 : 1);
   }
 
-  const apiKey = process.env.PARALLEL_API_KEY;
+  const apiKey = loadApiKey();
   if (!apiKey) {
-    console.error(JSON.stringify({ error: "missing_parallel_api_key", message: "Set PARALLEL_API_KEY in environment." }, null, 2));
+    console.error(JSON.stringify({ error: "missing_parallel_api_key", message: "Set PARALLEL_API_KEY in environment or ~/.openclaw/credentials/parallel_api_key" }, null, 2));
     process.exit(2);
   }
 
