@@ -15,6 +15,7 @@ EXECUTOR="cargo"
 PROMPT=""
 PROMPT_FILE=""
 RUNTIME_LOG_FILE=""
+THOUGHT_LOG_FILE=""
 NOOP_STREAK_LIMIT=""
 CONFORMANCE_INTERVAL_UNCHANGED=""
 PROGRESS_FILE=""
@@ -38,6 +39,7 @@ Optional:
   --prompt              Optional user-session prompt string
   --prompt-file         Optional path to prompt text file (conflicts with --prompt)
   --runtime-log-file    Optional human-readable phase stream output
+  --thought-log-file    Optional markdown thought log output per phase
   --noop-streak-limit   Force mutation after N no-op cycles
   --conformance-interval-unchanged  Run full conformance every K unchanged cycles
   --progress-file       Optional progress state file path
@@ -69,6 +71,8 @@ while [[ $# -gt 0 ]]; do
       PROMPT_FILE="${2:-}"; shift 2 ;;
     --runtime-log-file)
       RUNTIME_LOG_FILE="${2:-}"; shift 2 ;;
+    --thought-log-file)
+      THOUGHT_LOG_FILE="${2:-}"; shift 2 ;;
     --noop-streak-limit)
       NOOP_STREAK_LIMIT="${2:-}"; shift 2 ;;
     --conformance-interval-unchanged)
@@ -126,6 +130,9 @@ if [[ -n "$PROMPT_FILE" ]]; then
 fi
 if [[ -n "$RUNTIME_LOG_FILE" ]]; then
   CMD+=(--runtime-log-file "$RUNTIME_LOG_FILE")
+fi
+if [[ -n "$THOUGHT_LOG_FILE" ]]; then
+  CMD+=(--thought-log-file "$THOUGHT_LOG_FILE")
 fi
 if [[ -n "$NOOP_STREAK_LIMIT" ]]; then
   CMD+=(--noop-streak-limit "$NOOP_STREAK_LIMIT")

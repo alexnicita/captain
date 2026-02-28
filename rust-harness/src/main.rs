@@ -93,6 +93,8 @@ enum Commands {
         cycle_output_file: Option<String>,
         #[arg(long)]
         runtime_log_file: Option<String>,
+        #[arg(long)]
+        thought_log_file: Option<String>,
         #[arg(long, default_value_t = 3)]
         noop_streak_limit: u64,
         #[arg(long, default_value_t = 3)]
@@ -204,6 +206,7 @@ async fn main() -> Result<()> {
             push_each_cycle,
             cycle_output_file,
             runtime_log_file,
+            thought_log_file,
             noop_streak_limit,
             conformance_interval_unchanged,
             progress_file,
@@ -225,6 +228,7 @@ async fn main() -> Result<()> {
                 push_each_cycle,
                 cycle_output_file,
                 runtime_log_file,
+                thought_log_file,
                 noop_streak_limit,
                 conformance_interval_unchanged,
                 progress_file,
@@ -467,6 +471,7 @@ struct CodingModeArgs {
     push_each_cycle: bool,
     cycle_output_file: Option<String>,
     runtime_log_file: Option<String>,
+    thought_log_file: Option<String>,
     noop_streak_limit: u64,
     conformance_interval_unchanged: u64,
     progress_file: Option<String>,
@@ -509,6 +514,7 @@ async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
         push_each_cycle: args.push_each_cycle,
         cycle_output_file: args.cycle_output_file,
         runtime_log_file: args.runtime_log_file,
+        thought_log_file: args.thought_log_file,
         noop_streak_limit: args.noop_streak_limit,
         conformance_interval_unchanged: args.conformance_interval_unchanged,
         progress_file: args.progress_file,

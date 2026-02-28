@@ -39,6 +39,7 @@ pub struct CodingRunArgs {
     pub push_each_cycle: bool,
     pub cycle_output_file: Option<String>,
     pub runtime_log_file: Option<String>,
+    pub thought_log_file: Option<String>,
     pub noop_streak_limit: u64,
     pub conformance_interval_unchanged: u64,
     pub progress_file: Option<String>,
@@ -289,6 +290,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 
     let output_path = resolve_output_file(&repo_path, args.cycle_output_file.as_deref())?;
     let runtime_log_path = resolve_output_file(&repo_path, args.runtime_log_file.as_deref())?;
+    let thought_log_path = resolve_output_file(&repo_path, args.thought_log_file.as_deref())?;
     let progress_path = resolve_output_file(&repo_path, args.progress_file.as_deref())?
         .unwrap_or_else(|| repo_path.join(".harness/coding-progress.json"));
     let lock_path = resolve_output_file(&repo_path, args.run_lock_file.as_deref())?
@@ -440,6 +442,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         emit_phase_event(
             &sink,
             runtime_log_path.as_deref(),
+            thought_log_path.as_deref(),
             &cycle_id,
             cycles_total,
             architecture_result.clone(),
@@ -496,6 +499,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         emit_phase_event(
             &sink,
             runtime_log_path.as_deref(),
+            thought_log_path.as_deref(),
             &cycle_id,
             cycles_total,
             feature_result.clone(),
@@ -550,6 +554,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         emit_phase_event(
             &sink,
             runtime_log_path.as_deref(),
+            thought_log_path.as_deref(),
             &cycle_id,
             cycles_total,
             conformance_result.clone(),
@@ -587,6 +592,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         emit_phase_event(
             &sink,
             runtime_log_path.as_deref(),
+            thought_log_path.as_deref(),
             &cycle_id,
             cycles_total,
             cleanup_result.clone(),
@@ -725,6 +731,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             emit_phase_event(
                 &sink,
                 runtime_log_path.as_deref(),
+                thought_log_path.as_deref(),
                 &cycle_id,
                 cycles_total,
                 pause_result,
@@ -1744,6 +1751,7 @@ fn slugify_task_line(line: &str) -> String {
 fn emit_phase_event(
     sink: &EventSink,
     runtime_log_path: Option<&Path>,
+    thought_log_path: Option<&Path>,
     cycle_id: &str,
     cycle: u64,
     result: PhaseResult,
@@ -1767,6 +1775,9 @@ fn emit_phase_event(
 
     if let Some(path) = runtime_log_path {
         append_runtime_log(path, cycle, result.phase, &data)?;
+    }
+    if let Some(path) = thought_log_path {
+        append_thought_log(path, cycle, result.phase, &data)?;
     }
 
     Ok(())
@@ -1803,6 +1814,36 @@ fn append_runtime_log(
         result,
         next
     )?;
+
+    Ok(())
+}
+
+fn append_thought_log(
+    path: &Path,
+    cycle: u64,
+    phase: CyclePhase,
+    data: &serde_json::Value,
+) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let ts = now_unix();
+    let reason = data.get("reason").and_then(|v| v.as_str()).unwrap_or("n/a");
+    let result = data.get("result").and_then(|v| v.as_str()).unwrap_or("n/a");
+    let next = data.get("next").and_then(|v| v.as_str()).unwrap_or("n/a");
+    let selected_task = data
+        .get("selected_task")
+        .and_then(|v| v.get("title"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "## cycle {cycle} — {} ({ts})", phase.label())?;
+    writeln!(file, "- reason: {reason}")?;
+    writeln!(file, "- selected task: {selected_task}")?;
+    writeln!(file, "- result: {result}")?;
+    writeln!(file, "- next: {next}\n")?;
 
     Ok(())
 }
@@ -2481,6 +2522,7 @@ mod tests {
             push_each_cycle: false,
             cycle_output_file: Some(output.display().to_string()),
             runtime_log_file: None,
+            thought_log_file: None,
             noop_streak_limit: 3,
             conformance_interval_unchanged: 3,
             progress_file: None,
