@@ -24,6 +24,15 @@ pub mod kinds {
     pub const SCHEDULER_TICK: &str = "scheduler.tick";
     pub const CLI_RUN_SUMMARY: &str = "cli.run.summary";
     pub const CLI_BATCH_SUMMARY: &str = "cli.batch.summary";
+    pub const CODING_RUN_STARTED: &str = "coding.run.started";
+    pub const CODING_RUN_FINISHED: &str = "coding.run.finished";
+    pub const CODING_HEARTBEAT: &str = "coding.heartbeat";
+    pub const CODING_CYCLE_STARTED: &str = "coding.cycle.started";
+    pub const CODING_CYCLE_PLAN: &str = "coding.cycle.plan";
+    pub const CODING_CYCLE_ACT: &str = "coding.cycle.act";
+    pub const CODING_CYCLE_VERIFY: &str = "coding.cycle.verify";
+    pub const CODING_CYCLE_HOOK: &str = "coding.cycle.hook";
+    pub const CODING_CYCLE_FINISHED: &str = "coding.cycle.finished";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

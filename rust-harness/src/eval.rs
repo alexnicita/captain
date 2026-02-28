@@ -140,6 +140,15 @@ fn known_kinds() -> BTreeSet<&'static str> {
         kinds::SCHEDULER_TICK,
         kinds::CLI_RUN_SUMMARY,
         kinds::CLI_BATCH_SUMMARY,
+        kinds::CODING_RUN_STARTED,
+        kinds::CODING_RUN_FINISHED,
+        kinds::CODING_HEARTBEAT,
+        kinds::CODING_CYCLE_STARTED,
+        kinds::CODING_CYCLE_PLAN,
+        kinds::CODING_CYCLE_ACT,
+        kinds::CODING_CYCLE_VERIFY,
+        kinds::CODING_CYCLE_HOOK,
+        kinds::CODING_CYCLE_FINISHED,
     ])
 }
 

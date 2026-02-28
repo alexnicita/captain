@@ -62,6 +62,50 @@ pub struct GateStopArgs {
     pub base_dir: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct RuntimeGate {
+    start_epoch: u64,
+    min_runtime_sec: u64,
+}
+
+impl RuntimeGate {
+    pub fn new(start_epoch: u64, min_runtime_sec: u64) -> Self {
+        Self {
+            start_epoch,
+            min_runtime_sec,
+        }
+    }
+
+    pub fn start_epoch(&self) -> u64 {
+        self.start_epoch
+    }
+
+    pub fn min_runtime_sec(&self) -> u64 {
+        self.min_runtime_sec
+    }
+
+    pub fn deadline_epoch(&self) -> u64 {
+        self.start_epoch.saturating_add(self.min_runtime_sec)
+    }
+
+    pub fn elapsed_sec_at(&self, now_epoch: u64) -> u64 {
+        now_epoch.saturating_sub(self.start_epoch)
+    }
+
+    pub fn remaining_sec_at(&self, now_epoch: u64) -> u64 {
+        self.min_runtime_sec
+            .saturating_sub(self.elapsed_sec_at(now_epoch))
+    }
+
+    pub fn is_active_at(&self, now_epoch: u64) -> bool {
+        self.remaining_sec_at(now_epoch) > 0
+    }
+
+    pub fn is_open_at(&self, now_epoch: u64) -> bool {
+        self.remaining_sec_at(now_epoch) == 0
+    }
+}
+
 pub async fn gate_start(args: GateStartArgs) -> Result<()> {
     if args.poll_seconds == 0 {
         return Err(anyhow!("poll_seconds must be > 0"));
@@ -98,6 +142,7 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
         finish_epoch: None,
         elapsed_sec: None,
     };
+    let runtime_gate = RuntimeGate::new(state.start_epoch, min_runtime_sec);
     write_state(&run_dir, &state)?;
     append_log(
         &run_dir,
@@ -124,11 +169,10 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
         }
 
         let checklist_stats = parse_checklist(&checklist)?;
-        let elapsed = now_unix().saturating_sub(state.start_epoch);
-        let remaining = min_runtime_sec.saturating_sub(elapsed);
-        let gate_open = remaining == 0;
-
         let now = now_unix();
+        let elapsed = runtime_gate.elapsed_sec_at(now);
+        let remaining = runtime_gate.remaining_sec_at(now);
+        let gate_open = runtime_gate.is_open_at(now);
         if now >= next_heartbeat {
             append_log(
                 &run_dir,
@@ -173,8 +217,9 @@ pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
     let checklist = parse_checklist(Path::new(&state.checklist_path))?;
     let now = now_unix();
     let elapsed = effective_elapsed_sec(&state, now);
-    let remaining = state.min_runtime_sec.saturating_sub(elapsed);
-    let runtime_gate_open = remaining == 0;
+    let runtime_gate = RuntimeGate::new(state.start_epoch, state.min_runtime_sec);
+    let remaining = runtime_gate.min_runtime_sec().saturating_sub(elapsed);
+    let runtime_gate_open = runtime_gate.is_open_at(now);
     let last_heartbeat_epoch = read_last_heartbeat_epoch(&run_dir)?;
 
     Ok(json!({
@@ -369,6 +414,18 @@ fn now_unix() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_gate_deadline_and_remaining_behavior() {
+        let gate = RuntimeGate::new(100, 10);
+        assert_eq!(gate.start_epoch(), 100);
+        assert_eq!(gate.deadline_epoch(), 110);
+        assert_eq!(gate.elapsed_sec_at(105), 5);
+        assert_eq!(gate.remaining_sec_at(105), 5);
+        assert!(gate.is_active_at(109));
+        assert!(!gate.is_active_at(110));
+        assert!(gate.is_open_at(110));
+    }
 
     #[test]
     fn parse_checklist_counts_done_and_total() {

@@ -1,3 +1,4 @@
+pub mod coding;
 pub mod config;
 pub mod eval;
 pub mod events;

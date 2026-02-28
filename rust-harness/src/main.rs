@@ -1,3 +1,6 @@
+use agent_harness::coding::{
+    parse_duration_seconds, run_coding_loop, CodingRunArgs, ExecutorPreset,
+};
 use agent_harness::config::AppConfig;
 use agent_harness::eval::evaluate_replay;
 use agent_harness::events::{kinds, now_unix, EventSink, HarnessEvent};
@@ -9,7 +12,7 @@ use agent_harness::runtime_gate::{
 };
 use agent_harness::scheduler::{QueuedTask, Scheduler, TaskQueue};
 use agent_harness::tools::{ToolPolicy, ToolPolicyMode, ToolRegistry};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::fs;
@@ -60,6 +63,39 @@ enum Commands {
     Batch {
         #[arg(long)]
         objectives_file: String,
+    },
+    /// Run coding cycles against a repository for a fixed timebox.
+    Code {
+        #[arg(long)]
+        repo: String,
+        #[arg(long)]
+        time: String,
+        #[arg(long, default_value_t = 30)]
+        heartbeat_sec: u64,
+        #[arg(long, default_value_t = 2)]
+        cycle_pause_sec: u64,
+        #[arg(long, default_value = "cargo")]
+        executor: String,
+        #[arg(long)]
+        plan_cmd: Vec<String>,
+        #[arg(long)]
+        act_cmd: Vec<String>,
+        #[arg(long)]
+        verify_cmd: Vec<String>,
+        #[arg(long)]
+        allow_cmd: Vec<String>,
+        #[arg(long, default_value_t = false)]
+        commit_each_cycle: bool,
+        #[arg(long, default_value_t = false)]
+        push_each_cycle: bool,
+        #[arg(long, default_value = "harness: coding cycle")]
+        commit_message_prefix: String,
+        #[arg(long)]
+        cycle_output_file: Option<String>,
+        #[arg(long, conflicts_with = "prompt_file")]
+        prompt: Option<String>,
+        #[arg(long, conflicts_with = "prompt")]
+        prompt_file: Option<String>,
     },
     /// Enforce runtime + checklist completion gates (Rust port of prior Python helper).
     Gate {
@@ -145,6 +181,43 @@ async fn main() -> Result<()> {
             max_iterations,
         } => loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?,
         Commands::Batch { objectives_file } => batch_mode(&objectives_file, &cfg, &policy).await?,
+        Commands::Code {
+            repo,
+            time,
+            heartbeat_sec,
+            cycle_pause_sec,
+            executor,
+            plan_cmd,
+            act_cmd,
+            verify_cmd,
+            allow_cmd,
+            commit_each_cycle,
+            push_each_cycle,
+            commit_message_prefix,
+            cycle_output_file,
+            prompt,
+            prompt_file,
+        } => {
+            coding_mode(
+                &cfg,
+                repo,
+                time,
+                heartbeat_sec,
+                cycle_pause_sec,
+                executor,
+                plan_cmd,
+                act_cmd,
+                verify_cmd,
+                allow_cmd,
+                commit_each_cycle,
+                push_each_cycle,
+                commit_message_prefix,
+                cycle_output_file,
+                prompt,
+                prompt_file,
+            )
+            .await?
+        }
         Commands::Gate { command } => gate_command(command).await?,
         Commands::Status => status(&cfg).await?,
         Commands::Replay {
@@ -364,6 +437,75 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
     Ok(())
 }
 
+async fn coding_mode(
+    cfg: &AppConfig,
+    repo: String,
+    time: String,
+    heartbeat_sec: u64,
+    cycle_pause_sec: u64,
+    executor: String,
+    plan_cmd: Vec<String>,
+    act_cmd: Vec<String>,
+    verify_cmd: Vec<String>,
+    allow_cmd: Vec<String>,
+    commit_each_cycle: bool,
+    push_each_cycle: bool,
+    commit_message_prefix: String,
+    cycle_output_file: Option<String>,
+    prompt: Option<String>,
+    prompt_file: Option<String>,
+) -> Result<()> {
+    let duration_sec = parse_duration_seconds(&time).map_err(|e| anyhow!(e))?;
+    let preset = parse_executor_preset(&executor)?;
+
+    let user_prompt = match (prompt, prompt_file) {
+        (Some(prompt), None) => Some(prompt),
+        (None, Some(path)) => {
+            let loaded = fs::read_to_string(&path)?;
+            let trimmed = loaded.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        (None, None) => None,
+        (Some(_), Some(_)) => unreachable!("clap enforces prompt conflict"),
+    };
+
+    let summary = run_coding_loop(CodingRunArgs {
+        repo_path: repo,
+        duration_sec,
+        heartbeat_sec,
+        cycle_pause_sec,
+        preset,
+        plan_cmd,
+        act_cmd,
+        verify_cmd,
+        allow_cmd,
+        user_prompt,
+        commit_each_cycle,
+        push_each_cycle,
+        commit_message_prefix,
+        cycle_output_file,
+        event_log_path: cfg.event_log_path.clone(),
+    })
+    .await?;
+
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
+fn parse_executor_preset(input: &str) -> Result<ExecutorPreset> {
+    match input {
+        "shell" => Ok(ExecutorPreset::Shell),
+        "cargo" => Ok(ExecutorPreset::Cargo),
+        other => Err(anyhow!(
+            "invalid --executor '{other}' (expected 'shell' or 'cargo')"
+        )),
+    }
+}
+
 async fn gate_command(command: GateCommands) -> Result<()> {
     match command {
         GateCommands::Start {
@@ -457,4 +599,63 @@ async fn eval(
     let report = evaluate_replay(&summary);
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_parses_code_with_prompt() {
+        let cli = Cli::try_parse_from([
+            "agent-harness",
+            "code",
+            "--repo",
+            ".",
+            "--time",
+            "1h",
+            "--prompt",
+            "focus on portability",
+        ])
+        .unwrap();
+
+        match cli.command {
+            Commands::Code {
+                repo,
+                time,
+                prompt,
+                prompt_file,
+                ..
+            } => {
+                assert_eq!(repo, ".");
+                assert_eq!(time, "1h");
+                assert_eq!(prompt.as_deref(), Some("focus on portability"));
+                assert!(prompt_file.is_none());
+            }
+            _ => panic!("expected code command"),
+        }
+    }
+
+    #[test]
+    fn cli_rejects_prompt_and_prompt_file_together() {
+        let result = Cli::try_parse_from([
+            "agent-harness",
+            "code",
+            "--repo",
+            ".",
+            "--time",
+            "1h",
+            "--prompt",
+            "x",
+            "--prompt-file",
+            "./prompt.txt",
+        ]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_executor_preset_rejects_invalid() {
+        assert!(parse_executor_preset("python").is_err());
+    }
 }
