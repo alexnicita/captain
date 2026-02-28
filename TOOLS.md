@@ -46,6 +46,9 @@ Things like:
 ### Git Workflow Preference
 
 - After every local commit, immediately push to remote (`origin/master`) unless explicitly told otherwise.
+- Commit subjects must be human-informative and specific.
+- Never use vague/templated subjects like: `build a generalizable ... — harness: coding cycle`.
+- Use Conventional Commits with concrete scope + action (what changed and why).
 
 ## Why Separate?
 
