@@ -845,6 +845,7 @@ fn default_cargo_commands() -> DefaultCommands {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_cycle_hooks(
     sink: &EventSink,
     cycle_id: &str,
@@ -1326,6 +1327,7 @@ async fn run_cycle_hooks(
     Ok(hooks)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_git_commit_event(
     sink: &EventSink,
     cycle_id: &str,
@@ -1352,6 +1354,7 @@ fn emit_git_commit_event(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_git_push_event(
     sink: &EventSink,
     cycle_id: &str,
