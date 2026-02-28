@@ -36,7 +36,10 @@ pub mod kinds {
     pub const CODING_PHASE: &str = "coding.phase";
     pub const CODING_COUNTER: &str = "coding.counter";
     pub const CODING_LOCK_EXISTS: &str = "coding.lock.exists";
+    pub const CODING_LOCK_ACQUIRED: &str = "coding.lock.acquired";
     pub const CODING_CONFORMANCE_SKIPPED: &str = "coding.conformance.skipped";
+    pub const GIT_COMMIT: &str = "git.commit";
+    pub const GIT_PUSH: &str = "git.push";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
