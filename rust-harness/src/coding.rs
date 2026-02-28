@@ -124,6 +124,15 @@ pub struct FeatureTask {
     pub selected_line: String,
 }
 
+#[derive(Debug, Clone)]
+struct RankedTaskCandidate {
+    task: FeatureTask,
+    score: i64,
+    impact: i64,
+    novelty: i64,
+    cooldown_remaining: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhaseResult {
     pub phase: CyclePhase,
