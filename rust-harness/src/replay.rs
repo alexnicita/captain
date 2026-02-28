@@ -12,6 +12,7 @@ pub struct ReplaySummary {
     pub run_ids: BTreeSet<String>,
     pub first_ts_unix: Option<u64>,
     pub last_ts_unix: Option<u64>,
+    pub sequence_monotonic_per_run: bool,
 }
 
 pub fn replay_file(path: &str) -> Result<ReplaySummary> {
@@ -26,13 +27,23 @@ pub fn replay_str(content: &str) -> Result<ReplaySummary> {
     let mut total_events = 0usize;
     let mut first_ts = None;
     let mut last_ts = None;
+    let mut previous_seq_by_run: BTreeMap<String, u64> = BTreeMap::new();
+    let mut sequence_monotonic_per_run = true;
 
     for line in content.lines().filter(|l| !l.trim().is_empty()) {
         let event: HarnessEvent = serde_json::from_str(line)?;
-        *kinds.entry(event.kind).or_default() += 1;
+        *kinds.entry(event.kind.clone()).or_default() += 1;
         if let Some(task_id) = event.task_id {
             task_ids.insert(task_id);
         }
+
+        if let Some(previous_seq) = previous_seq_by_run.get(&event.run_id).copied() {
+            if event.seq <= previous_seq {
+                sequence_monotonic_per_run = false;
+            }
+        }
+        previous_seq_by_run.insert(event.run_id.clone(), event.seq);
+
         run_ids.insert(event.run_id);
 
         first_ts = Some(first_ts.map_or(event.ts_unix, |ts: u64| ts.min(event.ts_unix)));
@@ -47,6 +58,7 @@ pub fn replay_str(content: &str) -> Result<ReplaySummary> {
         run_ids,
         first_ts_unix: first_ts,
         last_ts_unix: last_ts,
+        sequence_monotonic_per_run,
     })
 }
 
@@ -61,5 +73,6 @@ mod tests {
         assert!(summary.total_events >= 4);
         assert_eq!(summary.kinds.get("task.started").copied().unwrap_or(0), 1);
         assert_eq!(summary.kinds.get("task.finished").copied().unwrap_or(0), 1);
+        assert!(summary.sequence_monotonic_per_run);
     }
 }

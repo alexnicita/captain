@@ -50,6 +50,15 @@ pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
         detail: format!("started={started}, finished={finished}"),
     });
 
+    checks.push(EvalCheck {
+        name: "sequence_monotonic_per_run".to_string(),
+        pass: summary.sequence_monotonic_per_run,
+        detail: format!(
+            "sequence_monotonic_per_run={}",
+            summary.sequence_monotonic_per_run
+        ),
+    });
+
     let known = known_kinds();
     let unknown: Vec<String> = summary
         .kinds
@@ -111,5 +120,19 @@ mod tests {
             .checks
             .iter()
             .any(|c| c.name == "has_task_finished" && !c.pass));
+    }
+
+    #[test]
+    fn eval_detects_non_monotonic_sequence() {
+        let content = r#"{"kind":"run.started","ts_unix":1,"run_id":"r1","seq":2}
+{"kind":"task.started","ts_unix":2,"run_id":"r1","seq":1,"task_id":"t1"}
+{"kind":"task.finished","ts_unix":3,"run_id":"r1","seq":3,"task_id":"t1"}
+"#;
+        let summary = replay_str(content).unwrap();
+        let report = evaluate_replay(&summary);
+        assert!(report
+            .checks
+            .iter()
+            .any(|c| c.name == "sequence_monotonic_per_run" && !c.pass));
     }
 }

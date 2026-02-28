@@ -115,6 +115,22 @@ fn make_policy(cli: &Cli) -> ToolPolicy {
     policy
 }
 
+fn parse_queue_line(line: &str) -> Option<(u8, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    if let Some(rest) = trimmed.strip_prefix("[p1]") {
+        return Some((1, rest.trim().to_string()));
+    }
+    if let Some(rest) = trimmed.strip_prefix("[p0]") {
+        return Some((0, rest.trim().to_string()));
+    }
+
+    Some((0, trimmed.to_string()))
+}
+
 async fn run_once(
     objective: String,
     task_id: Option<String>,
@@ -215,20 +231,20 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
     let mut queue = TaskQueue::new();
     let lines = fs::read_to_string(objectives_file)?;
     for (idx, line) in lines.lines().enumerate() {
-        let objective = line.trim();
-        if objective.is_empty() || objective.starts_with('#') {
+        let Some((priority, objective)) = parse_queue_line(line) else {
             continue;
-        }
+        };
         queue.enqueue(QueuedTask {
             task_id: format!("task-{}-{}", now_unix(), idx),
-            objective: objective.to_string(),
-            priority: 0,
+            objective,
+            priority,
         });
     }
 
     let scheduler = Scheduler {
         orchestrator: &orchestrator,
         event_sink: &sink,
+        cfg: cfg.scheduler.clone(),
     };
     let summary = scheduler.run_queue(queue).await?;
 
@@ -237,6 +253,7 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
             "total": summary.total,
             "completed": summary.completed,
             "failed": summary.failed,
+            "max_concurrent_tasks": cfg.scheduler.max_concurrent_tasks,
         })),
     )?;
 

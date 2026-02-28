@@ -27,7 +27,7 @@
   - provider timeout/retry mechanics
   - tool lifecycle event emission
 - `scheduler.rs`
-  - queue primitives + batch execution
+  - queue primitives + bounded-concurrency batch execution
 - `events.rs`
   - event taxonomy constants
   - run IDs + sequence numbers

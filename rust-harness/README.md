@@ -25,8 +25,8 @@ See `ARCHITECTURE.md` for internals and extension points.
   - provider retries with linear backoff
   - evented tool call/output/error lifecycle
 - **Queue/scheduler primitives**
-  - in-memory priority queue
-  - batch runner for multi-task files
+  - in-memory priority queue (`[p1]` high-priority lines)
+  - bounded-concurrency batch runner (configurable)
 - **Replay + eval baseline**
   - event taxonomy summaries
   - fixture-backed regression checks
@@ -53,6 +53,7 @@ agent-harness status
 agent-harness run --objective "what time is it"
 agent-harness run --objective "what time is it" --allow-tool time.now
 agent-harness batch --objectives-file ./fixtures/objectives.txt
+# objectives format supports optional prefixes: [p1] high, [p0] normal
 agent-harness replay --path ./runs/events.jsonl
 agent-harness eval --path ./runs/events.jsonl
 agent-harness loop --interval-seconds 60 --max-iterations 5 --objective "heartbeat time task"
@@ -80,6 +81,7 @@ Environment overrides:
 - `HARNESS_PROVIDER_ENDPOINT`
 - `HARNESS_PROVIDER_TIMEOUT_MS`
 - `HARNESS_PROVIDER_MAX_RETRIES`
+- scheduler knobs live in TOML (`scheduler.max_concurrent_tasks`, `scheduler.queue_poll_ms`)
 
 ## Dogfood workflow (harness-on-harness)
 

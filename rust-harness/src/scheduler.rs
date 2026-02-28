@@ -1,6 +1,8 @@
+use crate::config::SchedulerConfig;
 use crate::events::{kinds, EventSink, HarnessEvent};
 use crate::orchestrator::{Orchestrator, TaskSpec, TaskSummary};
 use anyhow::Result;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::VecDeque;
@@ -55,6 +57,7 @@ pub struct BatchSummary {
 pub struct Scheduler<'a> {
     pub orchestrator: &'a Orchestrator<'a>,
     pub event_sink: &'a EventSink,
+    pub cfg: SchedulerConfig,
 }
 
 impl<'a> Scheduler<'a> {
@@ -63,13 +66,29 @@ impl<'a> Scheduler<'a> {
         let mut completed = 0usize;
         let mut failed = 0usize;
         let mut task_summaries = Vec::new();
+        let max_concurrent = self.cfg.max_concurrent_tasks.max(1);
 
-        while let Some(item) = queue.dequeue() {
-            let task_spec = TaskSpec {
-                task_id: item.task_id.clone(),
-                objective: item.objective.clone(),
+        let mut in_flight = FuturesUnordered::new();
+
+        while !queue.is_empty() || !in_flight.is_empty() {
+            while in_flight.len() < max_concurrent {
+                let Some(item) = queue.dequeue() else {
+                    break;
+                };
+                let task_id = item.task_id.clone();
+                let task_spec = TaskSpec {
+                    task_id: item.task_id,
+                    objective: item.objective,
+                };
+                let fut = async move { (task_id, self.orchestrator.run_task(task_spec).await) };
+                in_flight.push(fut);
+            }
+
+            let Some((task_id, result)) = in_flight.next().await else {
+                break;
             };
-            match self.orchestrator.run_task(task_spec).await {
+
+            match result {
                 Ok(summary) => {
                     completed += 1;
                     task_summaries.push(summary);
@@ -78,7 +97,7 @@ impl<'a> Scheduler<'a> {
                     failed += 1;
                     self.event_sink.emit(
                         &HarnessEvent::new(kinds::TASK_FINISHED)
-                            .with_task_id(item.task_id)
+                            .with_task_id(task_id)
                             .with_data(json!({
                                 "reason": "scheduler_task_failed",
                                 "error": err.to_string(),

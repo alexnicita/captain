@@ -21,6 +21,8 @@ cargo run -- --config ./config.local.toml run --objective "what time is it"
 cargo run -- --config ./config.local.toml batch --objectives-file ./fixtures/objectives.txt
 ```
 
+Use `[p1]` prefix for high-priority queue items in the objectives file.
+
 ## 4) Replay + eval
 
 ```bash
