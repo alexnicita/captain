@@ -79,9 +79,9 @@ echo "[harness] repo=$REPO_DIR"
 echo "[harness] runtime_sec=$RUNTIME_SEC"
 echo "[harness] state_dir=$STATE_DIR"
 
-pushd "$ROOT_DIR" >/dev/null
-cargo run -- gate start \
-  --repo "$REPO_DIR" \
+# Execute from target repo context (the gate command itself currently does not accept --repo).
+pushd "$REPO_DIR" >/dev/null
+cargo run --manifest-path "$ROOT_DIR/Cargo.toml" -- gate start \
   --checklist "$CHECKLIST" \
   --runtime-sec "$RUNTIME_SEC" \
   --heartbeat-sec "$HEARTBEAT_SEC" \
