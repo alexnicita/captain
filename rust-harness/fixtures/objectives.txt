@@ -1,0 +1,4 @@
+what time is it
+summarize the previous tool output
+# comment lines are ignored
+check completion criteria

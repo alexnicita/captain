@@ -1,23 +1,34 @@
+use agent_harness::config::AppConfig;
+use agent_harness::eval::evaluate_replay;
+use agent_harness::events::{kinds, now_unix, EventSink, HarnessEvent};
+use agent_harness::orchestrator::{Orchestrator, TaskSpec};
+use agent_harness::provider::build_provider;
+use agent_harness::replay::replay_file;
+use agent_harness::scheduler::{QueuedTask, Scheduler, TaskQueue};
+use agent_harness::tools::{ToolPolicy, ToolPolicyMode, ToolRegistry};
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use seaport_harness::config::AppConfig;
-use seaport_harness::eval::evaluate_replay;
-use seaport_harness::events::{EventSink, HarnessEvent};
-use seaport_harness::orchestrator::{Orchestrator, TaskSpec};
-use seaport_harness::provider::build_provider;
-use seaport_harness::replay::replay_file;
-use seaport_harness::tools::ToolRegistry;
+use serde_json::json;
+use std::fs;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
-#[command(name = "seaport-harness")]
-#[command(about = "Rust-first LLM harness scaffold for Seaport operations")]
+#[command(name = "agent-harness")]
+#[command(about = "General-purpose Rust harness scaffold for provider/tool orchestration")]
 struct Cli {
     /// Optional config file path (TOML)
     #[arg(long)]
     config: Option<String>,
+
+    /// Restrict execution to this set of tools (repeatable).
+    #[arg(long)]
+    allow_tool: Vec<String>,
+
+    /// Block execution for this set of tools (repeatable).
+    #[arg(long)]
+    deny_tool: Vec<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -29,6 +40,8 @@ enum Commands {
     Run {
         #[arg(long)]
         objective: String,
+        #[arg(long)]
+        task_id: Option<String>,
     },
     /// Loop mode: repeatedly run the orchestrator against the same objective.
     Loop {
@@ -40,14 +53,19 @@ enum Commands {
         #[arg(long, default_value_t = 0)]
         max_iterations: u32,
     },
-    /// Print harness config and mode details.
+    /// Run a queue of objectives from a text file (one per line).
+    Batch {
+        #[arg(long)]
+        objectives_file: String,
+    },
+    /// Print harness config and registered tools.
     Status,
     /// Replay event log and print event-kind summary.
     Replay {
         #[arg(long)]
         path: Option<String>,
     },
-    /// Run basic eval checks against event log.
+    /// Run eval checks against event log.
     Eval {
         #[arg(long)]
         path: Option<String>,
@@ -62,14 +80,16 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let cfg = AppConfig::load(cli.config.as_deref())?;
+    let policy = make_policy(&cli);
 
     match cli.command {
-        Commands::Run { objective } => run_once(objective, &cfg).await?,
+        Commands::Run { objective, task_id } => run_once(objective, task_id, &cfg, &policy).await?,
         Commands::Loop {
             interval_seconds,
             objective,
             max_iterations,
-        } => loop_mode(interval_seconds, objective, max_iterations, &cfg).await?,
+        } => loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?,
+        Commands::Batch { objectives_file } => batch_mode(&objectives_file, &cfg, &policy).await?,
         Commands::Status => status(&cfg).await?,
         Commands::Replay { path } => replay(path.as_deref(), &cfg).await?,
         Commands::Eval { path } => eval(path.as_deref(), &cfg).await?,
@@ -78,32 +98,76 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_once(objective: String, cfg: &AppConfig) -> Result<()> {
+fn make_policy(cli: &Cli) -> ToolPolicy {
+    let mut policy = if cli.allow_tool.is_empty() {
+        ToolPolicy::default()
+    } else {
+        ToolPolicy {
+            mode: ToolPolicyMode::AllowList,
+            allowed_tools: cli.allow_tool.iter().cloned().collect(),
+            denied_tools: Default::default(),
+        }
+    };
+
+    for denied in &cli.deny_tool {
+        policy.denied_tools.insert(denied.clone());
+    }
+    policy
+}
+
+async fn run_once(
+    objective: String,
+    task_id: Option<String>,
+    cfg: &AppConfig,
+    policy: &ToolPolicy,
+) -> Result<()> {
     info!(%objective, "run_once start");
     let provider = build_provider(&cfg.provider);
-
     let tools = ToolRegistry::with_defaults();
     let sink = EventSink::new(&cfg.event_log_path)?;
 
+    sink.emit(&HarnessEvent::new(kinds::RUN_STARTED).with_data(json!({
+        "mode": "run",
+        "provider": cfg.provider.kind.clone(),
+        "model": cfg.provider.model.clone(),
+    })))?;
+
     let orchestrator = Orchestrator {
         provider: provider.as_ref(),
+        provider_cfg: cfg.provider.clone(),
         tools: &tools,
+        tool_policy: policy.clone(),
         cfg: cfg.orchestrator.clone(),
         event_sink: &sink,
     };
 
-    let task_id = format!("task-{}", seaport_harness::events::now_unix());
-    let summary = orchestrator.run_task(TaskSpec { task_id: task_id.clone(), objective })?;
-    sink.emit(&HarnessEvent::new("cli.run.summary").with_task_id(task_id).with_data(
-        serde_json::json!({
-            "steps": summary.steps,
-            "tool_calls": summary.tool_calls,
-            "reason": summary.stopped_reason,
-        }),
-    ))?;
+    let task_id = task_id.unwrap_or_else(|| format!("task-{}", now_unix()));
+    let summary = orchestrator
+        .run_task(TaskSpec {
+            task_id: task_id.clone(),
+            objective,
+        })
+        .await?;
+
+    sink.emit(
+        &HarnessEvent::new(kinds::CLI_RUN_SUMMARY)
+            .with_task_id(task_id)
+            .with_data(json!({
+                "steps": summary.steps,
+                "tool_calls": summary.tool_calls,
+                "reason": summary.stopped_reason.clone(),
+                "runtime_ms": summary.runtime_ms,
+            })),
+    )?;
+
+    sink.emit(&HarnessEvent::new(kinds::RUN_FINISHED).with_data(json!({
+        "mode": "run",
+        "event_log": sink.path().display().to_string(),
+        "run_id": sink.run_id(),
+    })))?;
 
     println!("{}", serde_json::to_string_pretty(&summary)?);
-    info!("run_once complete");
+    info!(run_id = %sink.run_id(), "run_once complete");
     Ok(())
 }
 
@@ -112,11 +176,12 @@ async fn loop_mode(
     objective: String,
     max_iterations: u32,
     cfg: &AppConfig,
+    policy: &ToolPolicy,
 ) -> Result<()> {
     warn!(interval_seconds, max_iterations, "loop mode active");
     let mut count = 0u32;
     loop {
-        run_once(objective.clone(), cfg).await?;
+        run_once(objective.clone(), None, cfg, policy).await?;
         count += 1;
         if max_iterations > 0 && count >= max_iterations {
             break;
@@ -126,8 +191,74 @@ async fn loop_mode(
     Ok(())
 }
 
+async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy) -> Result<()> {
+    let provider = build_provider(&cfg.provider);
+    let tools = ToolRegistry::with_defaults();
+    let sink = EventSink::new(&cfg.event_log_path)?;
+
+    sink.emit(&HarnessEvent::new(kinds::RUN_STARTED).with_data(json!({
+        "mode": "batch",
+        "provider": cfg.provider.kind.clone(),
+        "model": cfg.provider.model.clone(),
+        "objectives_file": objectives_file,
+    })))?;
+
+    let orchestrator = Orchestrator {
+        provider: provider.as_ref(),
+        provider_cfg: cfg.provider.clone(),
+        tools: &tools,
+        tool_policy: policy.clone(),
+        cfg: cfg.orchestrator.clone(),
+        event_sink: &sink,
+    };
+
+    let mut queue = TaskQueue::new();
+    let lines = fs::read_to_string(objectives_file)?;
+    for (idx, line) in lines.lines().enumerate() {
+        let objective = line.trim();
+        if objective.is_empty() || objective.starts_with('#') {
+            continue;
+        }
+        queue.enqueue(QueuedTask {
+            task_id: format!("task-{}-{}", now_unix(), idx),
+            objective: objective.to_string(),
+            priority: 0,
+        });
+    }
+
+    let scheduler = Scheduler {
+        orchestrator: &orchestrator,
+        event_sink: &sink,
+    };
+    let summary = scheduler.run_queue(queue).await?;
+
+    sink.emit(
+        &HarnessEvent::new(kinds::CLI_BATCH_SUMMARY).with_data(json!({
+            "total": summary.total,
+            "completed": summary.completed,
+            "failed": summary.failed,
+        })),
+    )?;
+
+    sink.emit(&HarnessEvent::new(kinds::RUN_FINISHED).with_data(json!({
+        "mode": "batch",
+        "event_log": sink.path().display().to_string(),
+        "run_id": sink.run_id(),
+    })))?;
+
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}
+
 async fn status(cfg: &AppConfig) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(cfg)?);
+    let tools = ToolRegistry::with_defaults();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "config": cfg,
+            "tool_specs": tools.specs(),
+        }))?
+    );
     Ok(())
 }
 

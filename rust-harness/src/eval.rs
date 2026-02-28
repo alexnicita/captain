@@ -1,5 +1,7 @@
+use crate::events::kinds;
 use crate::replay::ReplaySummary;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvalReport {
@@ -23,31 +25,91 @@ pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
         detail: format!("total_events={}", summary.total_events),
     });
 
-    let has_task_finished = summary.kinds.get("task.finished").copied().unwrap_or(0) > 0;
+    let started = summary.kinds.get(kinds::TASK_STARTED).copied().unwrap_or(0);
+    let finished = summary
+        .kinds
+        .get(kinds::TASK_FINISHED)
+        .copied()
+        .unwrap_or(0);
+
     checks.push(EvalCheck {
-        name: "has_task_finished".to_string(),
-        pass: has_task_finished,
-        detail: format!(
-            "task.finished count={}",
-            summary.kinds.get("task.finished").copied().unwrap_or(0)
-        ),
+        name: "has_task_started".to_string(),
+        pass: started > 0,
+        detail: format!("{}={started}", kinds::TASK_STARTED),
     });
 
-    let has_provider_response = summary
-        .kinds
-        .get("provider.response")
-        .copied()
-        .unwrap_or(0)
-        > 0;
     checks.push(EvalCheck {
-        name: "has_provider_response".to_string(),
-        pass: has_provider_response,
-        detail: format!(
-            "provider.response count={}",
-            summary.kinds.get("provider.response").copied().unwrap_or(0)
-        ),
+        name: "has_task_finished".to_string(),
+        pass: finished > 0,
+        detail: format!("{}={finished}", kinds::TASK_FINISHED),
+    });
+
+    checks.push(EvalCheck {
+        name: "finished_not_exceed_started".to_string(),
+        pass: finished <= started,
+        detail: format!("started={started}, finished={finished}"),
+    });
+
+    let known = known_kinds();
+    let unknown: Vec<String> = summary
+        .kinds
+        .keys()
+        .filter(|kind| !known.contains(kind.as_str()))
+        .cloned()
+        .collect();
+    checks.push(EvalCheck {
+        name: "no_unknown_event_kinds".to_string(),
+        pass: unknown.is_empty(),
+        detail: if unknown.is_empty() {
+            "ok".to_string()
+        } else {
+            format!("unknown={}", unknown.join(","))
+        },
     });
 
     let pass = checks.iter().all(|c| c.pass);
     EvalReport { pass, checks }
+}
+
+fn known_kinds() -> BTreeSet<&'static str> {
+    BTreeSet::from([
+        kinds::RUN_STARTED,
+        kinds::RUN_FINISHED,
+        kinds::TASK_STARTED,
+        kinds::TASK_FINISHED,
+        kinds::PROVIDER_REQUEST,
+        kinds::PROVIDER_RESPONSE,
+        kinds::PROVIDER_RETRY,
+        kinds::PROVIDER_TIMEOUT,
+        kinds::PROVIDER_ERROR,
+        kinds::TOOL_CALL,
+        kinds::TOOL_OUTPUT,
+        kinds::TOOL_ERROR,
+        kinds::CLI_RUN_SUMMARY,
+        kinds::CLI_BATCH_SUMMARY,
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::replay::replay_str;
+
+    #[test]
+    fn eval_passes_good_fixture() {
+        let summary = replay_str(include_str!("../fixtures/good_run.jsonl")).unwrap();
+        let report = evaluate_replay(&summary);
+        assert!(report.pass);
+    }
+
+    #[test]
+    fn eval_fails_bad_fixture() {
+        let summary = replay_str(include_str!("../fixtures/bad_run_missing_finish.jsonl")).unwrap();
+        let report = evaluate_replay(&summary);
+        assert!(!report.pass);
+        assert!(report
+            .checks
+            .iter()
+            .any(|c| c.name == "has_task_finished" && !c.pass));
+    }
 }

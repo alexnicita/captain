@@ -3,8 +3,17 @@ event_log_path = "./runs/events.jsonl"
 [provider]
 kind = "echo"
 model = "local-stub"
+endpoint = "http://localhost:11434/v1/chat/completions"
+api_key_env = "OPENAI_API_KEY"
+timeout_ms = 20000
+max_retries = 2
+retry_backoff_ms = 350
 
 [orchestrator]
 max_steps = 8
 max_tool_calls = 8
 max_runtime_seconds = 60
+
+[scheduler]
+max_concurrent_tasks = 2
+queue_poll_ms = 50

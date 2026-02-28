@@ -1,0 +1,5 @@
+{"kind":"run.started","ts_unix":1700000100,"run_id":"run-bad","seq":1,"data":{"mode":"run"}}
+{"kind":"task.started","ts_unix":1700000101,"run_id":"run-bad","seq":2,"task_id":"task-bad","data":{"objective":"oops"}}
+{"kind":"provider.request","ts_unix":1700000102,"run_id":"run-bad","seq":3,"task_id":"task-bad","data":{"step":1,"attempt":1}}
+{"kind":"provider.error","ts_unix":1700000103,"run_id":"run-bad","seq":4,"task_id":"task-bad","data":{"error":"timeout"}}
+{"kind":"run.finished","ts_unix":1700000104,"run_id":"run-bad","seq":5,"data":{"mode":"run"}}

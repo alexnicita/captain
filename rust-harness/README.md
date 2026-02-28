@@ -1,28 +1,38 @@
-# seaport-harness
+# agent-harness
 
-Rust-first autonomous harness skeleton focused on safe orchestration loops.
+A general-purpose, publishable Rust harness for provider/tool orchestration.
 
-See `ARCHITECTURE.md` for module layout and extension points.
+This project is intentionally **config-driven and pluggable**:
+- swap providers (`echo`, `http`, `http-stub`) via config
+- register tools with typed handlers + policy gates
+- run single tasks, loops, or queued batches
+- emit JSONL event streams for replay/eval/regression checks
+
+See `ARCHITECTURE.md` for internals and extension points.
 
 ## What ships now
 
-- **Provider abstraction** (`Provider` trait)
+- **Provider abstraction** (`Provider` trait, async)
   - `EchoProvider` deterministic local adapter
-  - `HttpProviderStub` for future remote model wiring
-- **Tool registry/dispatcher**
-  - Structured JSON input/output
-  - Built-in tools: `echo`, `time.now`
-- **Task orchestrator with guardrails**
-  - max steps
-  - max tool calls
-  - max runtime seconds
-- **Event model + tracing/logging**
-  - JSONL event sink (`task.started`, `provider.response`, `tool.output`, `task.finished`, `cli.run.summary`)
-- **Config loading**
-  - defaults + optional TOML file + env overrides
-- **Replay + eval scaffolding**
-  - Replay event file into aggregate summary
-  - Basic eval checks for run health
+  - `HttpProvider` scaffold for OpenAI-compatible endpoints
+  - timeout + retry settings wired through config
+- **Tool registry + policy gates**
+  - tool specs with input/output schemas
+  - typed parsing for built-in tools
+  - allow-list / deny-list execution policy
+- **Robust orchestrator loop**
+  - max steps/tool calls/runtime guardrails
+  - provider retries with linear backoff
+  - evented tool call/output/error lifecycle
+- **Queue/scheduler primitives**
+  - in-memory priority queue
+  - batch runner for multi-task files
+- **Replay + eval baseline**
+  - event taxonomy summaries
+  - fixture-backed regression checks
+- **Observability**
+  - run-scoped IDs + sequence numbers
+  - event taxonomy (`run.*`, `task.*`, `provider.*`, `tool.*`, `cli.*`)
 
 ## Toolchain + local build checks
 
@@ -38,12 +48,14 @@ If Rust is missing, the checker prints rustup bootstrap commands.
 ## CLI
 
 ```bash
-seaport-harness --help
-seaport-harness status
-seaport-harness run --objective "what time is it"
-seaport-harness replay --path ./runs/events.jsonl
-seaport-harness eval --path ./runs/events.jsonl
-seaport-harness loop --interval-seconds 60 --max-iterations 5 --objective "heartbeat time task"
+agent-harness --help
+agent-harness status
+agent-harness run --objective "what time is it"
+agent-harness run --objective "what time is it" --allow-tool time.now
+agent-harness batch --objectives-file ./fixtures/objectives.txt
+agent-harness replay --path ./runs/events.jsonl
+agent-harness eval --path ./runs/events.jsonl
+agent-harness loop --interval-seconds 60 --max-iterations 5 --objective "heartbeat time task"
 ```
 
 With cargo:
@@ -51,32 +63,40 @@ With cargo:
 ```bash
 cargo run -- status
 cargo run -- run --objective "what time is it"
+cargo run -- batch --objectives-file ./fixtures/objectives.txt
 cargo run -- replay --path ./runs/events.jsonl
 cargo run -- eval --path ./runs/events.jsonl
 ```
 
 ## Config
 
-Pass `--config ./config/harness.toml` or rely on defaults.
+Pass `--config ./config.example.toml` or rely on defaults.
 
-Env overrides:
+Environment overrides:
 
-- `HARNESS_PROVIDER` (e.g. `echo`, `http-stub`)
+- `HARNESS_PROVIDER` (`echo`, `http`, `http-stub`)
 - `HARNESS_MODEL`
 - `HARNESS_EVENT_LOG`
+- `HARNESS_PROVIDER_ENDPOINT`
+- `HARNESS_PROVIDER_TIMEOUT_MS`
+- `HARNESS_PROVIDER_MAX_RETRIES`
 
-## Dogfood workflow (local)
+## Dogfood workflow (harness-on-harness)
 
-1. Run a task:
-   - `cargo run -- run --objective "harness self-check time"`
-2. Replay generated events:
-   - `cargo run -- replay --path ./runs/events.jsonl`
-3. Run eval checks:
-   - `cargo run -- eval --path ./runs/events.jsonl`
+```bash
+./scripts/dogfood.sh
+```
 
-This validates the harness with its own orchestration/event pipeline.
+That script runs:
+1. toolchain checks
+2. `run` objective through orchestrator
+3. `replay` on generated event log
+4. `eval` regression checks on the same run
 
-## Notes
+Use this flow continuously while extending modules.
 
-- Current runtime in this environment may not have the Rust toolchain installed (`cargo` unavailable).
-- Code is structured to compile with stable Rust once toolchain is present.
+## Contributor notes
+
+- Keep features provider-agnostic and config-driven.
+- Prefer additive extension points over hardcoded behavior.
+- Add fixture coverage when introducing new event kinds or stop reasons.
