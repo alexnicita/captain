@@ -127,6 +127,24 @@ fi
 if [[ -n "$RUNTIME_LOG_FILE" ]]; then
   CMD+=(--runtime-log-file "$RUNTIME_LOG_FILE")
 fi
+if [[ -n "$NOOP_STREAK_LIMIT" ]]; then
+  CMD+=(--noop-streak-limit "$NOOP_STREAK_LIMIT")
+fi
+if [[ -n "$CONFORMANCE_INTERVAL_UNCHANGED" ]]; then
+  CMD+=(--conformance-interval-unchanged "$CONFORMANCE_INTERVAL_UNCHANGED")
+fi
+if [[ -n "$PROGRESS_FILE" ]]; then
+  CMD+=(--progress-file "$PROGRESS_FILE")
+fi
+if [[ -n "$RUN_LOCK_FILE" ]]; then
+  CMD+=(--run-lock-file "$RUN_LOCK_FILE")
+fi
+if [[ "$COMMIT_EACH_CYCLE" -eq 1 ]]; then
+  CMD+=(--commit-each-cycle)
+fi
+if [[ "$PUSH_EACH_CYCLE" -eq 1 ]]; then
+  CMD+=(--push-each-cycle)
+fi
 
 echo "[harness] repo=$REPO_DIR"
 echo "[harness] time=$TIME_INPUT"
