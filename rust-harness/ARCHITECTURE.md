@@ -3,7 +3,7 @@
 ## Core flow
 
 1. CLI parses command + loads config
-2. Provider factory builds `Box<dyn Provider>` from config
+2. Provider factory resolves requested adapter to runtime provider + fallback metadata
 3. Orchestrator executes task loop with budgets + retries
 4. Provider returns messages + optional tool calls
 5. Tool registry dispatches calls through policy gate
@@ -18,6 +18,7 @@
 - `provider.rs`
   - async provider trait
   - `EchoProvider`, `HttpProvider`, `HttpProviderStub`
+  - provider resolution metadata (`requested_kind`, `resolved_kind`, `fallback_reason`)
   - OpenAI-compatible adapter scaffolding
 - `tools.rs`
   - typed tool specs + handlers
@@ -46,6 +47,7 @@
 - `task.started`, `task.finished`
 - `provider.request`, `provider.response`, `provider.retry`, `provider.timeout`, `provider.error`
 - `tool.call`, `tool.output`, `tool.error`
+- `scheduler.dispatch`, `scheduler.result`, `scheduler.tick`
 - `cli.run.summary`, `cli.batch.summary`
 
 ## Design principles

@@ -77,6 +77,8 @@ cargo run -- replay --path ./runs/events.jsonl --latest-run
 cargo run -- eval --path ./runs/events.jsonl --run-id run-123
 ```
 
+`status` reports provider resolution (`requested_kind`, `resolved_kind`, `fallback_reason`) so fallback-to-stub behavior is explicit.
+
 ## Config
 
 Pass `--config ./config.example.toml` or rely on defaults.

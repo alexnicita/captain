@@ -85,6 +85,9 @@ impl HttpProvider {
             .clone()
             .unwrap_or_else(|| "http://localhost:11434/v1/chat/completions".to_string());
 
+        let endpoint_url = reqwest::Url::parse(&endpoint)
+            .with_context(|| format!("invalid provider endpoint URL: {endpoint}"))?;
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(cfg.timeout_ms))
             .build()
@@ -97,7 +100,7 @@ impl HttpProvider {
 
         Ok(Self {
             client,
-            endpoint,
+            endpoint: endpoint_url.to_string(),
             model: cfg.model.clone(),
             api_key,
         })
@@ -227,25 +230,76 @@ impl Provider for HttpProviderStub {
     }
 }
 
-pub fn build_provider(cfg: &ProviderConfig) -> Box<dyn Provider> {
+pub struct BuiltProvider {
+    pub provider: Box<dyn Provider>,
+    pub requested_kind: String,
+    pub resolved_kind: String,
+    pub fallback_reason: Option<String>,
+}
+
+pub fn build_provider(cfg: &ProviderConfig) -> BuiltProvider {
+    let requested = cfg.kind.clone();
     match cfg.kind.as_str() {
         "http" | "openai-compatible" => match HttpProvider::new(cfg) {
-            Ok(provider) => Box::new(provider),
-            Err(_) => Box::new(HttpProviderStub {
+            Ok(provider) => BuiltProvider {
+                provider: Box::new(provider),
+                requested_kind: requested,
+                resolved_kind: "http".to_string(),
+                fallback_reason: None,
+            },
+            Err(err) => BuiltProvider {
+                provider: Box::new(HttpProviderStub {
+                    endpoint: cfg.endpoint.clone().unwrap_or_else(|| {
+                        "http://localhost:11434/v1/chat/completions".to_string()
+                    }),
+                    model: cfg.model.clone(),
+                }),
+                requested_kind: requested,
+                resolved_kind: "http-stub".to_string(),
+                fallback_reason: Some(err.to_string()),
+            },
+        },
+        "http-stub" => BuiltProvider {
+            provider: Box::new(HttpProviderStub {
                 endpoint: cfg
                     .endpoint
                     .clone()
                     .unwrap_or_else(|| "http://localhost:11434/v1/chat/completions".to_string()),
                 model: cfg.model.clone(),
             }),
+            requested_kind: requested,
+            resolved_kind: "http-stub".to_string(),
+            fallback_reason: None,
         },
-        "http-stub" => Box::new(HttpProviderStub {
-            endpoint: cfg
-                .endpoint
-                .clone()
-                .unwrap_or_else(|| "http://localhost:11434/v1/chat/completions".to_string()),
-            model: cfg.model.clone(),
-        }),
-        _ => Box::new(EchoProvider),
+        _ => BuiltProvider {
+            provider: Box::new(EchoProvider),
+            requested_kind: requested,
+            resolved_kind: "echo".to_string(),
+            fallback_reason: None,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn http_provider_falls_back_to_stub_with_reason() {
+        let cfg = ProviderConfig {
+            kind: "http".to_string(),
+            model: "test".to_string(),
+            endpoint: Some("http://[::1".to_string()),
+            api_key_env: None,
+            timeout_ms: 100,
+            max_retries: 0,
+            retry_backoff_ms: 1,
+        };
+
+        let built = build_provider(&cfg);
+        assert_eq!(built.requested_kind, "http");
+        assert_eq!(built.resolved_kind, "http-stub");
+        assert!(built.fallback_reason.is_some());
+        assert_eq!(built.provider.name(), "http-stub");
     }
 }

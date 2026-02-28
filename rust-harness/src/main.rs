@@ -202,13 +202,28 @@ async fn run_once(
     policy: &ToolPolicy,
 ) -> Result<()> {
     info!(%objective, "run_once start");
-    let provider = build_provider(&cfg.provider);
+    let built_provider = build_provider(&cfg.provider);
+    if let Some(reason) = built_provider.fallback_reason.as_deref() {
+        warn!(
+            requested = %built_provider.requested_kind,
+            resolved = %built_provider.resolved_kind,
+            %reason,
+            "provider init fallback applied"
+        );
+    }
+    let provider_requested = built_provider.requested_kind.clone();
+    let provider_resolved = built_provider.resolved_kind.clone();
+    let provider_fallback_reason = built_provider.fallback_reason.clone();
+    let provider = built_provider.provider;
+
     let tools = ToolRegistry::with_defaults();
     let sink = EventSink::new(&cfg.event_log_path)?;
 
     sink.emit(&HarnessEvent::new(kinds::RUN_STARTED).with_data(json!({
         "mode": "run",
-        "provider": cfg.provider.kind.clone(),
+        "provider_requested": provider_requested,
+        "provider_resolved": provider_resolved,
+        "provider_fallback_reason": provider_fallback_reason,
         "model": cfg.provider.model.clone(),
     })))?;
 
@@ -272,13 +287,28 @@ async fn loop_mode(
 }
 
 async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy) -> Result<()> {
-    let provider = build_provider(&cfg.provider);
+    let built_provider = build_provider(&cfg.provider);
+    if let Some(reason) = built_provider.fallback_reason.as_deref() {
+        warn!(
+            requested = %built_provider.requested_kind,
+            resolved = %built_provider.resolved_kind,
+            %reason,
+            "provider init fallback applied"
+        );
+    }
+    let provider_requested = built_provider.requested_kind.clone();
+    let provider_resolved = built_provider.resolved_kind.clone();
+    let provider_fallback_reason = built_provider.fallback_reason.clone();
+    let provider = built_provider.provider;
+
     let tools = ToolRegistry::with_defaults();
     let sink = EventSink::new(&cfg.event_log_path)?;
 
     sink.emit(&HarnessEvent::new(kinds::RUN_STARTED).with_data(json!({
         "mode": "batch",
-        "provider": cfg.provider.kind.clone(),
+        "provider_requested": provider_requested,
+        "provider_resolved": provider_resolved,
+        "provider_fallback_reason": provider_fallback_reason,
         "model": cfg.provider.model.clone(),
         "objectives_file": objectives_file,
     })))?;
@@ -375,10 +405,17 @@ async fn gate_command(command: GateCommands) -> Result<()> {
 
 async fn status(cfg: &AppConfig) -> Result<()> {
     let tools = ToolRegistry::with_defaults();
+    let provider_resolution = build_provider(&cfg.provider);
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
             "config": cfg,
+            "provider_resolution": {
+                "requested_kind": provider_resolution.requested_kind,
+                "resolved_kind": provider_resolution.resolved_kind,
+                "fallback_reason": provider_resolution.fallback_reason,
+                "provider_name": provider_resolution.provider.name(),
+            },
             "tool_specs": tools.specs(),
         }))?
     );
