@@ -1,0 +1,15 @@
+{
+  "run_dir": "/home/ec2-user/.openclaw/workspace/harness/runs/run-20260228T200937Z",
+  "checklist_path": "/home/ec2-user/.openclaw/workspace/harness/checklist.dryrun.md",
+  "start_epoch": 1772309377.734693,
+  "start_iso_utc": "2026-02-28T20:09:37.734694+00:00",
+  "min_runtime_sec": 75,
+  "heartbeat_sec": 12,
+  "poll_sec": 15,
+  "dry_run": true,
+  "pid": 48696,
+  "status": "complete",
+  "finish_epoch": 1772309452.8018637,
+  "finish_iso_utc": "2026-02-28T20:10:52.801867+00:00",
+  "elapsed_sec": 75.06265139579773
+}

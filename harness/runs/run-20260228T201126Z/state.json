@@ -1,0 +1,15 @@
+{
+  "run_dir": "/home/ec2-user/.openclaw/workspace/harness/runs/run-20260228T201126Z",
+  "checklist_path": "/home/ec2-user/.openclaw/workspace/harness/checklist.test.md",
+  "start_epoch": 1772309486.2969444,
+  "start_iso_utc": "2026-02-28T20:11:26.296946+00:00",
+  "min_runtime_sec": 20,
+  "heartbeat_sec": 5,
+  "poll_sec": 15,
+  "dry_run": true,
+  "pid": 52391,
+  "status": "complete",
+  "finish_epoch": 1772309516.3230186,
+  "finish_iso_utc": "2026-02-28T20:11:56.323020+00:00",
+  "elapsed_sec": 30.025845289230347
+}

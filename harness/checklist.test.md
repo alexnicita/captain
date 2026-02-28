@@ -1,0 +1,2 @@
+- [x] harness boots
+- [x] checklist parser works

@@ -1,0 +1,8 @@
+[2026-02-28T20:09:37.734791+00:00] START pid=48696 checklist=/home/ec2-user/.openclaw/workspace/harness/checklist.dryrun.md min_runtime_sec=75 heartbeat_sec=12
+[2026-02-28T20:09:37.734945+00:00] HEARTBEAT elapsed_sec=0 remaining_sec=75 checklist_done=2/2 gate_open=False all_done=True
+[2026-02-28T20:09:52.747356+00:00] HEARTBEAT elapsed_sec=15 remaining_sec=60 checklist_done=2/2 gate_open=False all_done=True
+[2026-02-28T20:10:07.769238+00:00] HEARTBEAT elapsed_sec=30 remaining_sec=45 checklist_done=2/2 gate_open=False all_done=True
+[2026-02-28T20:10:22.777341+00:00] HEARTBEAT elapsed_sec=45 remaining_sec=30 checklist_done=2/2 gate_open=False all_done=True
+[2026-02-28T20:10:37.787756+00:00] HEARTBEAT elapsed_sec=60 remaining_sec=15 checklist_done=2/2 gate_open=False all_done=True
+[2026-02-28T20:10:52.798179+00:00] HEARTBEAT elapsed_sec=75 remaining_sec=0 checklist_done=2/2 gate_open=True all_done=True
+[2026-02-28T20:10:52.799503+00:00] COMPLETE criteria satisfied elapsed_sec=75 checklist=2/2
