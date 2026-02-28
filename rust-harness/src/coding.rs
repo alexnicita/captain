@@ -857,6 +857,8 @@ async fn run_cycle_hooks(
     selected_task: Option<&FeatureTask>,
 ) -> Result<Vec<HookResult>> {
     let mut hooks = Vec::new();
+    let mut commit_subject: Option<String> = None;
+    let mut commit_message: Option<String> = None;
 
     if let Some(path) = output_path {
         let payload = json!({
@@ -875,23 +877,53 @@ async fn run_cycle_hooks(
     }
 
     if !verify_success {
+        let detail = "verify stage failed".to_string();
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: false,
             skipped: true,
-            detail: "verify stage failed".to_string(),
+            detail: detail.clone(),
         });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, true, None, None, "skipped", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "skipped",
+            "push skipped because commit did not run",
+        )?;
         return Ok(hooks);
     }
 
     let should_try_vcs = args.commit_each_cycle || meaningful_cycle || args.push_each_cycle;
     if !should_try_vcs {
+        let detail = "no meaningful cycle and commit_each_cycle disabled".to_string();
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: true,
             skipped: true,
-            detail: "no meaningful cycle and commit_each_cycle disabled".to_string(),
+            detail: detail.clone(),
         });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, true, true, None, None, "skipped", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            true,
+            true,
+            None,
+            None,
+            "skipped",
+            "push_each_cycle disabled and cycle not marked meaningful",
+        )?;
         return Ok(hooks);
     }
 
@@ -914,6 +946,27 @@ async fn run_cycle_hooks(
         },
     });
     if !fetch_result.success {
+        let detail = "git fetch failed before commit".to_string();
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: true,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, true, None, None, "blocked", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "blocked",
+            "push skipped because git fetch failed",
+        )?;
         return Ok(hooks);
     }
 
@@ -949,6 +1002,31 @@ async fn run_cycle_hooks(
     });
 
     if !pull_result.success || !conflict_files.is_empty() {
+        let detail = if !pull_result.success {
+            "git pull failed before commit".to_string()
+        } else {
+            "unresolved merge conflicts remain".to_string()
+        };
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: true,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, true, None, None, "blocked", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "blocked",
+            "push skipped because pull/conflict gate did not pass",
+        )?;
         return Ok(hooks);
     }
 
@@ -957,63 +1035,218 @@ async fn run_cycle_hooks(
         .with_context(|| "failed to inspect git status before commit hook")?;
 
     if !dirty {
+        let detail = "no tracked changes".to_string();
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: true,
             skipped: true,
-            detail: "no tracked changes".to_string(),
+            detail: detail.clone(),
         });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, true, true, None, None, "skipped", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            true,
+            true,
+            None,
+            None,
+            "skipped",
+            "push skipped because no commit was created",
+        )?;
         return Ok(hooks);
     }
 
     let pending_names = pending_file_names(repo_path).await;
     if !commit_has_meaningful_scope(&pending_names, selected_task) {
+        let detail =
+            "commit quality gate: non-meaningful fallback/materialization-only diff".to_string();
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: true,
             skipped: true,
-            detail: "commit quality gate: non-meaningful fallback/materialization-only diff"
-                .to_string(),
+            detail: detail.clone(),
         });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, true, true, None, None, "skipped", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            true,
+            true,
+            None,
+            None,
+            "skipped",
+            "push skipped because commit quality gate rejected pending diff",
+        )?;
         return Ok(hooks);
     }
 
     let add_result = execute_command_line(WorkStage::Act, "git add -A", &hook_ctx, policy).await;
     if !add_result.success {
+        let detail = format!("git add failed: {}", summarize_error(&add_result));
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: false,
             skipped: false,
-            detail: format!("git add failed: {}", summarize_error(&add_result)),
+            detail: detail.clone(),
         });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, false, None, None, "failed", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "blocked",
+            "push skipped because git add failed",
+        )?;
         return Ok(hooks);
     }
 
     let staged_names = staged_file_names(repo_path).await;
+    if staged_names.is_empty() {
+        let detail = "git add produced empty staged set".to_string();
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: true,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, true, None, None, "rejected", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "blocked",
+            "push skipped because commit had no staged files",
+        )?;
+        return Ok(hooks);
+    }
+
     let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
     let mut subject = summarize_commit_focus(repo_path, args.user_prompt.as_deref()).await;
-    if commit_subject_is_generic(&subject) {
+    if commit_subject_is_generic(&subject)
+        || !subject_mentions_changed_scope(&subject, &staged_names)
+    {
         subject = deterministic_subject_from_files(&staged_names);
     }
+    if commit_subject_is_generic(&subject)
+        || !subject_mentions_changed_scope(&subject, &staged_names)
+    {
+        let detail = format!(
+            "commit subject rejected by quality gate: '{}'",
+            subject.trim()
+        );
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: true,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            Some(subject.as_str()),
+            None,
+            "rejected",
+            &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            Some(subject.as_str()),
+            None,
+            "blocked",
+            "push skipped because commit subject failed quality gate",
+        )?;
+        return Ok(hooks);
+    }
+
     let deduped_subject = dedupe_subject(repo_path, &subject).await;
+    if commit_subject_is_generic(&deduped_subject)
+        || !subject_mentions_changed_scope(&deduped_subject, &staged_names)
+    {
+        let detail = format!(
+            "de-duplicated commit subject rejected by quality gate: '{}'",
+            deduped_subject.trim()
+        );
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: true,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            Some(deduped_subject.as_str()),
+            None,
+            "rejected",
+            &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            Some(deduped_subject.as_str()),
+            None,
+            "blocked",
+            "push skipped because de-duplicated subject failed quality gate",
+        )?;
+        return Ok(hooks);
+    }
+
     let message = format!("{}(harness): {}", commit_kind, deduped_subject);
+    commit_subject = Some(deduped_subject.clone());
+    commit_message = Some(message.clone());
 
     let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
     let commit_result = execute_command_line(WorkStage::Act, &commit_cmd, &hook_ctx, policy).await;
     let commit_detail = if commit_result.success {
-        "ok".to_string()
+        "git commit ok".to_string()
     } else {
         summarize_error(&commit_result)
     };
-    sink.emit(
-        &HarnessEvent::new(kinds::GIT_COMMIT)
-            .with_task_id(cycle_id.to_string())
-            .with_data(json!({
-                "cycle": cycle,
-                "success": commit_result.success,
-                "message": message,
-                "detail": commit_detail,
-            })),
+    emit_git_commit_event(
+        sink,
+        cycle_id,
+        cycle,
+        commit_result.success,
+        false,
+        commit_subject.as_deref(),
+        commit_message.as_deref(),
+        if commit_result.success {
+            "ok"
+        } else {
+            "failed"
+        },
+        &commit_detail,
     )?;
     if !commit_result.success {
         hooks.push(HookResult {
@@ -1022,6 +1255,17 @@ async fn run_cycle_hooks(
             skipped: false,
             detail: format!("git commit failed: {}", summarize_error(&commit_result)),
         });
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            commit_subject.as_deref(),
+            commit_message.as_deref(),
+            "blocked",
+            "push skipped because commit failed",
+        )?;
         return Ok(hooks);
     }
 
@@ -1039,14 +1283,16 @@ async fn run_cycle_hooks(
         } else {
             summarize_error(&push_result)
         };
-        sink.emit(
-            &HarnessEvent::new(kinds::GIT_PUSH)
-                .with_task_id(cycle_id.to_string())
-                .with_data(json!({
-                    "cycle": cycle,
-                    "success": push_result.success,
-                    "detail": push_detail,
-                })),
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            push_result.success,
+            false,
+            commit_subject.as_deref(),
+            commit_message.as_deref(),
+            if push_result.success { "ok" } else { "failed" },
+            &push_detail,
         )?;
         hooks.push(HookResult {
             name: "push".to_string(),
@@ -1065,9 +1311,72 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: "push_each_cycle disabled and cycle not marked meaningful".to_string(),
         });
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            true,
+            true,
+            commit_subject.as_deref(),
+            commit_message.as_deref(),
+            "skipped",
+            "push_each_cycle disabled and cycle not marked meaningful",
+        )?;
     }
 
     Ok(hooks)
+}
+
+fn emit_git_commit_event(
+    sink: &EventSink,
+    cycle_id: &str,
+    cycle: u64,
+    success: bool,
+    skipped: bool,
+    subject: Option<&str>,
+    message: Option<&str>,
+    result: &str,
+    detail: &str,
+) -> Result<()> {
+    sink.emit(
+        &HarnessEvent::new(kinds::GIT_COMMIT)
+            .with_task_id(cycle_id.to_string())
+            .with_data(json!({
+                "cycle": cycle,
+                "success": success,
+                "skipped": skipped,
+                "result": result,
+                "subject": subject,
+                "message": message,
+                "detail": detail,
+            })),
+    )
+}
+
+fn emit_git_push_event(
+    sink: &EventSink,
+    cycle_id: &str,
+    cycle: u64,
+    success: bool,
+    skipped: bool,
+    subject: Option<&str>,
+    message: Option<&str>,
+    result: &str,
+    detail: &str,
+) -> Result<()> {
+    sink.emit(
+        &HarnessEvent::new(kinds::GIT_PUSH)
+            .with_task_id(cycle_id.to_string())
+            .with_data(json!({
+                "cycle": cycle,
+                "success": success,
+                "skipped": skipped,
+                "result": result,
+                "subject": subject,
+                "message": message,
+                "detail": detail,
+            })),
+    )
 }
 
 async fn run_architecture_phase(
@@ -1583,17 +1892,17 @@ fn deterministic_subject_from_files(files: &[String]) -> String {
         .join(", ");
 
     let intent = if names.iter().any(|f| f.starts_with("src/")) {
-        "harden coding flow"
+        "implement scoped code updates"
     } else if names
         .iter()
         .any(|f| f.ends_with("README.md") || f.ends_with("RUNBOOK.md"))
     {
-        "document anti-spam safeguards"
+        "document operator workflow changes"
     } else if names
         .iter()
         .any(|f| f.contains("test") || f.contains("fixtures/"))
     {
-        "cover behavior with tests"
+        "add regression coverage"
     } else {
         "update harness workflow"
     };
@@ -1606,12 +1915,62 @@ fn deterministic_subject_from_files(files: &[String]) -> String {
 }
 
 fn commit_subject_is_generic(subject: &str) -> bool {
-    let s = subject.trim().to_ascii_lowercase();
-    s.is_empty()
-        || s.contains("generalizable")
-        || s.contains("harness: coding cycle")
-        || s == "advance harness workflow"
-        || s.starts_with("build a generalizable")
+    let normalized = normalize_subject_text(subject);
+    if normalized.is_empty() {
+        return true;
+    }
+
+    let blocked_patterns = [
+        "generalizable",
+        "build a generalizable",
+        "harness coding cycle",
+        "coding cycle",
+        "advance harness workflow",
+        "update code",
+        "misc updates",
+        "minor fixes",
+    ];
+
+    blocked_patterns
+        .iter()
+        .any(|pattern| normalized.contains(pattern))
+}
+
+fn normalize_subject_text(subject: &str) -> String {
+    subject
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn subject_mentions_changed_scope(subject: &str, files: &[String]) -> bool {
+    let normalized_subject = normalize_subject_text(subject);
+    if normalized_subject.is_empty() || files.is_empty() {
+        return false;
+    }
+
+    files
+        .iter()
+        .flat_map(|file| scope_tokens_from_file(file))
+        .any(|token| normalized_subject.contains(&token))
+}
+
+fn scope_tokens_from_file(file: &str) -> Vec<String> {
+    let normalized = file
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>();
+
+    normalized
+        .split_whitespace()
+        .filter(|token| token.len() >= 3)
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>()
 }
 
 async fn dedupe_subject(repo_path: &Path, subject: &str) -> String {
@@ -1645,16 +2004,19 @@ fn commit_has_meaningful_scope(files: &[String], selected_task: Option<&FeatureT
         return false;
     }
 
-    let only_materialization = files
+    let only_internal_state = files
         .iter()
-        .all(|f| f == ".harness/forced-mutations.md" || f == ".harness/coding-progress.json");
-    if only_materialization {
+        .all(|f| f.starts_with(".harness/") || f.starts_with("runs/"));
+    if only_internal_state {
         return false;
     }
 
     let has_src = files.iter().any(|f| f.starts_with("src/"));
     let has_docs = files.iter().any(|f| {
-        f.ends_with("README.md") || f.ends_with("RUNBOOK.md") || f.ends_with("ARCHITECTURE.md")
+        f.ends_with("README.md")
+            || f.ends_with("RUNBOOK.md")
+            || f.ends_with("ARCHITECTURE.md")
+            || f.ends_with("MIGRATION.md")
     });
 
     if has_src {
