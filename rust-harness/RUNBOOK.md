@@ -46,6 +46,10 @@ Useful flags:
 --commit-each-cycle --push-each-cycle
 --cycle-output-file ./runs/cycle-output.jsonl
 --runtime-log-file ./runs/coding-runtime.log
+--noop-streak-limit 3
+--conformance-interval-unchanged 3
+--progress-file ./.harness/coding-progress.json
+--run-lock-file ./.git/.agent-harness-code.lock
 ```
 
 Coding mode guarantees the phase order each cycle:
@@ -55,6 +59,13 @@ Coding mode guarantees the phase order each cycle:
 If the repo is clean at architecture phase, the harness selects the next feature task from internal docs (`ARCHITECTURE.md`, `README.md`, `RUNBOOK.md`, `MIGRATION.md`) before running feature work.
 
 Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_resolution`, `commit`, `push`) so operators can see clean merges vs conflicts and unresolved/conflict-resolution status.
+
+Hard anti-noop controls (defaults):
+- `noop_streak_limit=3`: after 3 consecutive commit skips, next architecture/feature cycle forces a concrete mutation materialization; cycle fails if no diff is produced.
+- `conformance_interval_unchanged=3`: full conformance runs every 3 unchanged cycles, but always runs immediately when mutations exist.
+- Single-instance per repo lock: lock file prevents concurrent coding runs on the same repo and emits a lock-exists event.
+- Progress memory persists completed roadmap lines (`.harness/coding-progress.json`) so architecture selection advances instead of repeating.
+- Counters are emitted every cycle: `noop_streak`, `forced_mutation`, `task_advanced`.
 
 ## 5) Runtime-gate checklist run (Rust)
 

@@ -136,6 +136,10 @@ The script now executes **coding mode** directly (active plan/act/verify cycles)
 - Commands run through an **allowlisted command policy** (`cargo`, `git` by default).
 - Add explicit extras with `--allow-cmd <tool>` for non-default executables.
 - Every meaningful cleanup cycle attempts git sync (`fetch` + `pull`), commit, and push (with explicit event/log status).
+- Hard anti-noop defaults: `noop_streak_limit=3` (forced mutation + fail on no diff), `conformance_interval_unchanged=3` (skip heavy conformance on unchanged cycles, always run after mutations).
+- Single-instance lock per repo prevents parallel coding loops (`.git/.agent-harness-code.lock`) and emits `coding.lock.exists` if occupied.
+- Task progression memory persists completed roadmap lines (`.harness/coding-progress.json`) to avoid re-selecting the same architecture task.
+- Explicit cycle counters are emitted: `noop_streak`, `forced_mutation`, `task_advanced`.
 - Prompt input is optional and empty by default; no prompt content is hardcoded.
 - Prompt values are threaded into cycle context/logs and command env (`OPENCLAW_USER_PROMPT`) only when supplied.
 
