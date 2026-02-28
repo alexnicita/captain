@@ -1,1 +1,2 @@
 - [ ] cycle 2: materialize '2. provider plugins behind feature flags' (ARCHITECTURE.md)
+- [ ] cycle 4: materialize 'guaranteed phase state machine per cycle: `architecture -> feature -> conformance -> cleanup -> pause` (repeats until deadline)' (README.md)
