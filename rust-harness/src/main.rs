@@ -94,6 +94,14 @@ enum Commands {
         cycle_output_file: Option<String>,
         #[arg(long)]
         runtime_log_file: Option<String>,
+        #[arg(long, default_value_t = 3)]
+        noop_streak_limit: u64,
+        #[arg(long, default_value_t = 3)]
+        conformance_interval_unchanged: u64,
+        #[arg(long)]
+        progress_file: Option<String>,
+        #[arg(long)]
+        run_lock_file: Option<String>,
         #[arg(long, conflicts_with = "prompt_file")]
         prompt: Option<String>,
         #[arg(long, conflicts_with = "prompt")]
@@ -198,6 +206,10 @@ async fn main() -> Result<()> {
             commit_message_prefix,
             cycle_output_file,
             runtime_log_file,
+            noop_streak_limit,
+            conformance_interval_unchanged,
+            progress_file,
+            run_lock_file,
             prompt,
             prompt_file,
         } => {
@@ -216,6 +228,10 @@ async fn main() -> Result<()> {
                 commit_message_prefix,
                 cycle_output_file,
                 runtime_log_file,
+                noop_streak_limit,
+                conformance_interval_unchanged,
+                progress_file,
+                run_lock_file,
                 prompt,
                 prompt_file,
             };
@@ -455,6 +471,10 @@ struct CodingModeArgs {
     commit_message_prefix: String,
     cycle_output_file: Option<String>,
     runtime_log_file: Option<String>,
+    noop_streak_limit: u64,
+    conformance_interval_unchanged: u64,
+    progress_file: Option<String>,
+    run_lock_file: Option<String>,
     prompt: Option<String>,
     prompt_file: Option<String>,
 }
@@ -494,6 +514,10 @@ async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
         commit_message_prefix: args.commit_message_prefix,
         cycle_output_file: args.cycle_output_file,
         runtime_log_file: args.runtime_log_file,
+        noop_streak_limit: args.noop_streak_limit,
+        conformance_interval_unchanged: args.conformance_interval_unchanged,
+        progress_file: args.progress_file,
+        run_lock_file: args.run_lock_file,
         event_log_path: cfg.event_log_path.clone(),
     })
     .await?;

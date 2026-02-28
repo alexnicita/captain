@@ -38,6 +38,10 @@ pub struct CodingRunArgs {
     pub commit_message_prefix: String,
     pub cycle_output_file: Option<String>,
     pub runtime_log_file: Option<String>,
+    pub noop_streak_limit: u64,
+    pub conformance_interval_unchanged: u64,
+    pub progress_file: Option<String>,
+    pub run_lock_file: Option<String>,
     pub event_log_path: String,
 }
 
@@ -166,6 +170,28 @@ pub struct HookResult {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct TaskProgressMemory {
+    completed_roadmap_lines: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct EventCounters {
+    noop_streak: u64,
+    forced_mutation: u64,
+    task_advanced: u64,
+}
+
+struct RepoRunLock {
+    path: PathBuf,
+}
+
+impl Drop for RepoRunLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CycleContext {
     pub cycle: u64,
@@ -236,6 +262,13 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 
     let output_path = resolve_output_file(&repo_path, args.cycle_output_file.as_deref())?;
     let runtime_log_path = resolve_output_file(&repo_path, args.runtime_log_file.as_deref())?;
+    let progress_path = resolve_output_file(&repo_path, args.progress_file.as_deref())?
+        .unwrap_or_else(|| repo_path.join(".harness/coding-progress.json"));
+    let lock_path = resolve_output_file(&repo_path, args.run_lock_file.as_deref())?
+        .unwrap_or_else(|| repo_path.join(".git/.agent-harness-code.lock"));
+    let noop_streak_limit = args.noop_streak_limit.max(1);
+    let conformance_interval_unchanged = args.conformance_interval_unchanged.max(1);
+
     let executor = build_executor(&args)?;
     if !executor.policy().allows("git") {
         return Err(anyhow!(
@@ -244,6 +277,21 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     }
 
     let sink = EventSink::new(&args.event_log_path)?;
+    let _repo_lock = match acquire_repo_run_lock(&lock_path) {
+        Ok(lock) => lock,
+        Err(err) => {
+            sink.emit(
+                &HarnessEvent::new(kinds::CODING_LOCK_EXISTS).with_data(json!({
+                    "repo": repo_path.display().to_string(),
+                    "lock_file": lock_path.display().to_string(),
+                    "error": err.to_string(),
+                })),
+            )?;
+            return Err(err);
+        }
+    };
+
+    let mut progress_memory = load_progress_memory(&progress_path)?;
     let start_epoch = now_unix();
     let gate = RuntimeGate::new(start_epoch, args.duration_sec);
 
@@ -256,6 +304,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         "deadline_epoch": gate.deadline_epoch(),
         "prompt_provided": user_prompt.is_some(),
         "user_prompt": user_prompt.clone(),
+        "noop_streak_limit": noop_streak_limit,
+        "conformance_interval_unchanged": conformance_interval_unchanged,
+        "progress_file": progress_path.display().to_string(),
+        "run_lock_file": lock_path.display().to_string(),
     })))?;
 
     sink.emit(
@@ -266,6 +318,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             "deadline_epoch": gate.deadline_epoch(),
             "prompt_provided": user_prompt.is_some(),
             "user_prompt": user_prompt.clone(),
+            "noop_streak_limit": noop_streak_limit,
+            "conformance_interval_unchanged": conformance_interval_unchanged,
         })),
     )?;
 
@@ -273,6 +327,9 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let mut cycles_succeeded = 0u64;
     let mut cycles_failed = 0u64;
     let mut next_heartbeat_epoch = start_epoch;
+    let mut noop_streak = 0u64;
+    let mut unchanged_since_conformance = 0u64;
+    let mut counters = EventCounters::default();
 
     while gate.is_active_at(now_unix()) {
         let now = now_unix();
@@ -326,7 +383,14 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 
         let mut phase_results = Vec::new();
 
-        let architecture_result = run_architecture_phase(&repo_path).await?;
+        let forced_mutation_cycle = noop_streak >= noop_streak_limit;
+        let architecture_result = run_architecture_phase(
+            &repo_path,
+            &progress_memory,
+            forced_mutation_cycle,
+            cycles_total,
+        )
+        .await?;
         emit_phase_event(
             &sink,
             runtime_log_path.as_deref(),
@@ -389,10 +453,30 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         )?;
         phase_results.push(feature_result);
 
-        let verify_result = if plan_result.success && act_result.success {
+        let mutated_this_cycle = repo_dirty(&repo_path).await.unwrap_or(false);
+        let should_run_conformance = mutated_this_cycle
+            || unchanged_since_conformance >= conformance_interval_unchanged.saturating_sub(1);
+
+        let verify_result = if !(plan_result.success && act_result.success) {
+            StageResult::skipped(WorkStage::Verify, "feature stage failed")
+        } else if should_run_conformance {
             executor.verify(&ctx).await
         } else {
-            StageResult::skipped(WorkStage::Verify, "feature stage failed")
+            sink.emit(
+                &HarnessEvent::new(kinds::CODING_CONFORMANCE_SKIPPED)
+                    .with_task_id(cycle_id.clone())
+                    .with_data(json!({
+                        "cycle": cycles_total,
+                        "reason": "unchanged_window",
+                        "interval": conformance_interval_unchanged,
+                    })),
+            )?;
+            StageResult {
+                stage: WorkStage::Verify,
+                success: true,
+                error: None,
+                commands: Vec::new(),
+            }
         };
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_VERIFY)
@@ -432,7 +516,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 output_path.as_deref(),
                 user_prompt.as_deref(),
                 executor.policy(),
-                true,
+                mutated_this_cycle,
             )
             .await?;
         } else if output_path.is_some() {
@@ -466,6 +550,54 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             &HarnessEvent::new(kinds::CODING_CYCLE_HOOK)
                 .with_task_id(cycle_id.clone())
                 .with_data(json!({ "hooks": hook_results })),
+        )?;
+
+        let commit_skipped = hook_results.iter().any(|h| h.name == "commit" && h.skipped);
+        if commit_skipped {
+            noop_streak = noop_streak.saturating_add(1);
+        } else {
+            noop_streak = 0;
+        }
+        counters.noop_streak = noop_streak;
+
+        if forced_mutation_cycle {
+            counters.forced_mutation = counters.forced_mutation.saturating_add(1);
+            if !mutated_this_cycle {
+                sink.emit(
+                    &HarnessEvent::new(kinds::TASK_FINISHED)
+                        .with_task_id(cycle_id.clone())
+                        .with_data(json!({
+                            "mode": "coding",
+                            "cycle": cycles_total,
+                            "reason": "forced_mutation_no_diff",
+                            "runtime_ms": cycle_start.elapsed().as_millis() as u64,
+                        })),
+                )?;
+                return Err(anyhow!(
+                    "forced mutation cycle produced no diff; failing cycle as configured"
+                ));
+            }
+        }
+
+        if mutated_this_cycle {
+            unchanged_since_conformance = 0;
+            if let Some(task) = selected_task.clone() {
+                let task_key = format!("{}::{}", task.source, task.selected_line);
+                if progress_memory.completed_roadmap_lines.insert(task_key) {
+                    save_progress_memory(&progress_path, &progress_memory)?;
+                    counters.task_advanced = counters.task_advanced.saturating_add(1);
+                }
+            }
+        } else if should_run_conformance {
+            unchanged_since_conformance = 0;
+        } else {
+            unchanged_since_conformance = unchanged_since_conformance.saturating_add(1);
+        }
+
+        sink.emit(
+            &HarnessEvent::new(kinds::CODING_COUNTER)
+                .with_task_id(cycle_id.clone())
+                .with_data(serde_json::to_value(&counters)?),
         )?;
 
         let cycle_success = phase_results.iter().all(|phase| phase.success)
@@ -751,11 +883,17 @@ async fn run_cycle_hooks(
             }
 
             let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
-            let message = format!(
-                "{}(harness): {}",
-                commit_kind,
-                summarize_commit_focus(args.user_prompt.as_deref()),
-            );
+            let subject = summarize_commit_focus(args.user_prompt.as_deref());
+            let message = if args.commit_message_prefix.trim().is_empty() {
+                format!("{}(harness): {}", commit_kind, subject)
+            } else {
+                format!(
+                    "{}(harness): {} — {}",
+                    commit_kind,
+                    subject,
+                    args.commit_message_prefix.trim()
+                )
+            };
             let commit_cmd = format!("git commit -m {}", shell_words::quote(&message));
             let commit_result =
                 execute_command_line(WorkStage::Act, &commit_cmd, &hook_ctx, policy).await;
@@ -794,7 +932,12 @@ async fn run_cycle_hooks(
     Ok(hooks)
 }
 
-async fn run_architecture_phase(repo_path: &Path) -> Result<PhaseResult> {
+async fn run_architecture_phase(
+    repo_path: &Path,
+    progress: &TaskProgressMemory,
+    force_mutation: bool,
+    cycle: u64,
+) -> Result<PhaseResult> {
     let dirty = repo_dirty(repo_path)
         .await
         .with_context(|| "failed to inspect git status during architecture phase")?;
@@ -809,25 +952,40 @@ async fn run_architecture_phase(repo_path: &Path) -> Result<PhaseResult> {
         });
     }
 
-    let selected_task = select_next_feature_task_from_docs(repo_path).unwrap_or(FeatureTask {
-        title: "Roadmap fallback: improve coding loop reliability".to_string(),
-        source: "internal_default".to_string(),
-        selected_line: "No roadmap bullet found; use reliability backlog".to_string(),
-    });
+    let selected_task =
+        select_next_feature_task_from_docs(repo_path, progress).unwrap_or(FeatureTask {
+            title: "Roadmap fallback: improve coding loop reliability".to_string(),
+            source: "internal_default".to_string(),
+            selected_line: "No roadmap bullet found; use reliability backlog".to_string(),
+        });
+
+    if force_mutation {
+        materialize_forced_mutation(repo_path, cycle, &selected_task)?;
+    }
 
     Ok(PhaseResult {
         phase: CyclePhase::Architecture,
         reason: "repo clean; select/build next feature task from internal roadmap/docs".to_string(),
         selected_task: Some(selected_task.clone()),
         success: true,
-        result: format!(
-            "selected task '{}' from {}",
-            selected_task.title, selected_task.source
-        ),
+        result: if force_mutation {
+            format!(
+                "selected task '{}' from {} with forced mutation materialization",
+                selected_task.title, selected_task.source
+            )
+        } else {
+            format!(
+                "selected task '{}' from {}",
+                selected_task.title, selected_task.source
+            )
+        },
     })
 }
 
-fn select_next_feature_task_from_docs(repo_path: &Path) -> Option<FeatureTask> {
+fn select_next_feature_task_from_docs(
+    repo_path: &Path,
+    progress: &TaskProgressMemory,
+) -> Option<FeatureTask> {
     let candidates = ["ARCHITECTURE.md", "README.md", "RUNBOOK.md", "MIGRATION.md"];
     for file in candidates {
         let path = repo_path.join(file);
@@ -857,6 +1015,10 @@ fn select_next_feature_task_from_docs(repo_path: &Path) -> Option<FeatureTask> {
                 || line.starts_with("- [ ]");
 
             if is_actionable && looks_like_roadmap {
+                let key = format!("{}::{}", file, line);
+                if progress.completed_roadmap_lines.contains(&key) {
+                    continue;
+                }
                 return Some(FeatureTask {
                     title: line
                         .trim_start_matches('-')
@@ -975,19 +1137,19 @@ fn summarize_error(execution: &CommandExecution) -> String {
 }
 
 fn summarize_commit_focus(user_prompt: Option<&str>) -> String {
-    let default = "automated harness update".to_string();
+    let default = "advance harness workflow".to_string();
     let Some(prompt) = user_prompt else {
         return default;
     };
 
     let cleaned = prompt
         .split_whitespace()
-        .take(12)
+        .take(10)
         .collect::<Vec<_>>()
         .join(" ")
         .trim()
         .trim_matches(|c: char| c == '"' || c == '\'' || c == '.' || c == '!')
-        .to_lowercase();
+        .to_string();
 
     if cleaned.is_empty() {
         default
@@ -1286,6 +1448,54 @@ fn resolve_output_file(repo_path: &Path, output_file: Option<&str>) -> Result<Op
     Ok(Some(resolved))
 }
 
+fn acquire_repo_run_lock(path: &Path) -> Result<RepoRunLock> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(path)
+        .with_context(|| format!("run lock exists at {}", path.display()))?;
+
+    Ok(RepoRunLock {
+        path: path.to_path_buf(),
+    })
+}
+
+fn load_progress_memory(path: &Path) -> Result<TaskProgressMemory> {
+    if !path.exists() {
+        return Ok(TaskProgressMemory::default());
+    }
+
+    let content = fs::read_to_string(path)?;
+    let parsed = serde_json::from_str::<TaskProgressMemory>(&content).unwrap_or_default();
+    Ok(parsed)
+}
+
+fn save_progress_memory(path: &Path, progress: &TaskProgressMemory) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, serde_json::to_string_pretty(progress)?)?;
+    Ok(())
+}
+
+fn materialize_forced_mutation(repo_path: &Path, cycle: u64, task: &FeatureTask) -> Result<()> {
+    let path = repo_path.join(".harness/forced-mutations.md");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(
+        file,
+        "- [ ] cycle {}: materialize '{}' ({})",
+        cycle, task.title, task.source
+    )?;
+    Ok(())
+}
+
 pub fn parse_duration_seconds(input: &str) -> std::result::Result<u64, String> {
     let input = input.trim();
     if input.is_empty() {
@@ -1398,6 +1608,10 @@ mod tests {
             commit_message_prefix: "test".to_string(),
             cycle_output_file: Some(output.display().to_string()),
             runtime_log_file: None,
+            noop_streak_limit: 3,
+            conformance_interval_unchanged: 3,
+            progress_file: None,
+            run_lock_file: None,
             event_log_path: dir.path().join("events.jsonl").display().to_string(),
         };
 

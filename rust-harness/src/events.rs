@@ -34,6 +34,9 @@ pub mod kinds {
     pub const CODING_CYCLE_HOOK: &str = "coding.cycle.hook";
     pub const CODING_CYCLE_FINISHED: &str = "coding.cycle.finished";
     pub const CODING_PHASE: &str = "coding.phase";
+    pub const CODING_COUNTER: &str = "coding.counter";
+    pub const CODING_LOCK_EXISTS: &str = "coding.lock.exists";
+    pub const CODING_CONFORMANCE_SKIPPED: &str = "coding.conformance.skipped";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
