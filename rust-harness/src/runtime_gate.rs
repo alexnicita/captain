@@ -171,14 +171,19 @@ pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
     let run_dir = resolve_run_dir(args.run_dir.as_deref(), args.base_dir.as_deref())?;
     let state = read_state(&run_dir)?;
     let checklist = parse_checklist(Path::new(&state.checklist_path))?;
-    let elapsed = now_unix().saturating_sub(state.start_epoch);
+    let now = now_unix();
+    let elapsed = effective_elapsed_sec(&state, now);
     let remaining = state.min_runtime_sec.saturating_sub(elapsed);
     let runtime_gate_open = remaining == 0;
+    let last_heartbeat_epoch = read_last_heartbeat_epoch(&run_dir)?;
 
     Ok(json!({
         "run_dir": run_dir.display().to_string(),
         "status": state.status,
+        "terminal": matches!(state.status.as_str(), "complete" | "stopped"),
         "start_epoch": state.start_epoch,
+        "finish_epoch": state.finish_epoch,
+        "stop_epoch": state.stop_epoch,
         "elapsed_sec": elapsed,
         "remaining_sec": remaining,
         "runtime_gate_open": runtime_gate_open,
@@ -189,6 +194,8 @@ pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
             "all_done": checklist.all_done(),
         },
         "can_finish_now": runtime_gate_open && checklist.all_done(),
+        "last_heartbeat_epoch": last_heartbeat_epoch,
+        "heartbeat_stale_sec": last_heartbeat_epoch.map(|epoch| now.saturating_sub(epoch)),
         "progress_log": run_dir.join("progress.log").display().to_string(),
     }))
 }
@@ -312,6 +319,45 @@ fn append_log(run_dir: &Path, message: &str) -> Result<()> {
     Ok(())
 }
 
+fn effective_elapsed_sec(state: &RunState, now_epoch: u64) -> u64 {
+    if let Some(elapsed) = state.elapsed_sec {
+        return elapsed;
+    }
+    if let Some(finish_epoch) = state.finish_epoch {
+        return finish_epoch.saturating_sub(state.start_epoch);
+    }
+    if let Some(stop_epoch) = state.stop_epoch {
+        return stop_epoch.saturating_sub(state.start_epoch);
+    }
+    now_epoch.saturating_sub(state.start_epoch)
+}
+
+fn read_last_heartbeat_epoch(run_dir: &Path) -> Result<Option<u64>> {
+    let progress = run_dir.join("progress.log");
+    if !progress.exists() {
+        return Ok(None);
+    }
+
+    let mut last = None;
+    let content = fs::read_to_string(progress)?;
+    for line in content.lines() {
+        if !line.contains("HEARTBEAT") {
+            continue;
+        }
+        let Some(rest) = line.strip_prefix("[epoch=") else {
+            continue;
+        };
+        let Some((epoch_part, _)) = rest.split_once(']') else {
+            continue;
+        };
+        if let Ok(epoch) = epoch_part.parse::<u64>() {
+            last = Some(epoch);
+        }
+    }
+
+    Ok(last)
+}
+
 fn now_unix() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -343,5 +389,38 @@ mod tests {
         fs::write(&checklist, "- [x] one\n- [X] two\n").unwrap();
         let stats = parse_checklist(&checklist).unwrap();
         assert!(stats.all_done());
+    }
+
+    #[test]
+    fn effective_elapsed_uses_terminal_state() {
+        let state = RunState {
+            run_dir: "./tmp/x".to_string(),
+            checklist_path: "./tmp/checklist.md".to_string(),
+            start_epoch: 100,
+            min_runtime_sec: 10,
+            heartbeat_sec: 1,
+            poll_sec: 1,
+            dry_run: true,
+            status: "complete".to_string(),
+            stop_epoch: None,
+            finish_epoch: Some(107),
+            elapsed_sec: Some(7),
+        };
+
+        assert_eq!(effective_elapsed_sec(&state, 999), 7);
+    }
+
+    #[test]
+    fn read_last_heartbeat_epoch_parses_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path();
+        fs::write(
+            run_dir.join("progress.log"),
+            "[epoch=10] HEARTBEAT one\n[epoch=12] HEARTBEAT two\n[epoch=15] COMPLETE\n",
+        )
+        .unwrap();
+
+        let heartbeat = read_last_heartbeat_epoch(run_dir).unwrap();
+        assert_eq!(heartbeat, Some(12));
     }
 }

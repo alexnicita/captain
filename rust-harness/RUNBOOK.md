@@ -31,11 +31,13 @@ cargo run -- gate status
 cargo run -- gate stop
 ```
 
+`gate status` now reports terminal-aware elapsed time (`elapsed_sec`), plus heartbeat freshness via `last_heartbeat_epoch` and `heartbeat_stale_sec`.
+
 ## 5) Replay + eval
 
 ```bash
-cargo run -- --config ./config.local.toml replay --path ./runs/events.jsonl
-cargo run -- --config ./config.local.toml eval --path ./runs/events.jsonl
+cargo run -- --config ./config.local.toml replay --path ./runs/events.jsonl --latest-run
+cargo run -- --config ./config.local.toml eval --path ./runs/events.jsonl --latest-run
 ```
 
 ## 6) Tool policy hardening examples
