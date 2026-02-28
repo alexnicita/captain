@@ -2,8 +2,9 @@
 
 This directory stores local runtime artifacts for coding-mode execution.
 
-Expected transient files:
+Expected transient files (ignored by git):
 - `coding-progress.json`
 - `forced-mutations.md`
+- `thinking.md`
 
-These files are intentionally ignored by git to avoid noisy commits.
+Only this README stays tracked.

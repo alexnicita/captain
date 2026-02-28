@@ -5,4 +5,5 @@
 # harness runtime/state artifacts
 /.harness/*.json
 /.harness/forced-mutations.md
+/.harness/thinking.md
 !/.harness/README.md
