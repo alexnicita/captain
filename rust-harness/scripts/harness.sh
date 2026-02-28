@@ -15,6 +15,12 @@ EXECUTOR="cargo"
 PROMPT=""
 PROMPT_FILE=""
 RUNTIME_LOG_FILE=""
+NOOP_STREAK_LIMIT=""
+CONFORMANCE_INTERVAL_UNCHANGED=""
+PROGRESS_FILE=""
+RUN_LOCK_FILE=""
+COMMIT_EACH_CYCLE=0
+PUSH_EACH_CYCLE=0
 
 usage() {
   cat <<'EOF'
@@ -32,6 +38,12 @@ Optional:
   --prompt              Optional user-session prompt string
   --prompt-file         Optional path to prompt text file (conflicts with --prompt)
   --runtime-log-file    Optional human-readable phase stream output
+  --noop-streak-limit   Force mutation after N no-op cycles
+  --conformance-interval-unchanged  Run full conformance every K unchanged cycles
+  --progress-file       Optional progress state file path
+  --run-lock-file       Optional lock file path for single-instance guard
+  --commit-each-cycle   Attempt commit hook each cycle
+  --push-each-cycle     Attempt push after commit
 
 Examples:
   scripts/harness.sh --repo /path/to/repo --time 1h
@@ -57,6 +69,18 @@ while [[ $# -gt 0 ]]; do
       PROMPT_FILE="${2:-}"; shift 2 ;;
     --runtime-log-file)
       RUNTIME_LOG_FILE="${2:-}"; shift 2 ;;
+    --noop-streak-limit)
+      NOOP_STREAK_LIMIT="${2:-}"; shift 2 ;;
+    --conformance-interval-unchanged)
+      CONFORMANCE_INTERVAL_UNCHANGED="${2:-}"; shift 2 ;;
+    --progress-file)
+      PROGRESS_FILE="${2:-}"; shift 2 ;;
+    --run-lock-file)
+      RUN_LOCK_FILE="${2:-}"; shift 2 ;;
+    --commit-each-cycle)
+      COMMIT_EACH_CYCLE=1; shift ;;
+    --push-each-cycle)
+      PUSH_EACH_CYCLE=1; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
