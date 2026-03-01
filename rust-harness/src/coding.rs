@@ -1890,9 +1890,39 @@ async fn run_cycle_hooks(
         return Ok(hooks);
     }
 
+    let unstage_internal_result = unstage_internal_artifacts(&hook_ctx, policy).await;
+    if !unstage_internal_result.success {
+        let detail = format!(
+            "failed to unstage internal artifacts: {}",
+            summarize_error(&unstage_internal_result)
+        );
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: false,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, false, None, None, "failed", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "blocked",
+            "push skipped because unstage-internal gate failed",
+        )?;
+        return Ok(hooks);
+    }
+
     let staged_names = staged_file_names(repo_path).await;
-    if staged_names.is_empty() {
-        let detail = "git add produced empty staged set".to_string();
+    let staged_meaningful = filter_meaningful_scope_files(&staged_names);
+    if staged_meaningful.is_empty() {
+        let detail = "git add produced only internal/non-meaningful staged files".to_string();
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: false,
@@ -1919,12 +1949,12 @@ async fn run_cycle_hooks(
     let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
     let mut subject = summarize_commit_focus(repo_path, args.user_prompt.as_deref()).await;
     if commit_subject_is_generic(&subject)
-        || !subject_mentions_changed_scope(&subject, &staged_names)
+        || !subject_mentions_changed_scope(&subject, &staged_meaningful)
     {
-        subject = deterministic_subject_from_files(&staged_names);
+        subject = deterministic_subject_from_files(&staged_meaningful);
     }
     if commit_subject_is_generic(&subject)
-        || !subject_mentions_changed_scope(&subject, &staged_names)
+        || !subject_mentions_changed_scope(&subject, &staged_meaningful)
     {
         let detail = format!(
             "commit subject rejected by quality gate: '{}'",
@@ -1963,7 +1993,7 @@ async fn run_cycle_hooks(
 
     let deduped_subject = dedupe_subject(repo_path, &subject).await;
     if commit_subject_is_generic(&deduped_subject)
-        || !subject_mentions_changed_scope(&deduped_subject, &staged_names)
+        || !subject_mentions_changed_scope(&deduped_subject, &staged_meaningful)
     {
         let detail = format!(
             "de-duplicated commit subject rejected by quality gate: '{}'",
@@ -2661,7 +2691,8 @@ fn summarize_error(execution: &CommandExecution) -> String {
 
 async fn summarize_commit_focus(repo_path: &Path, _user_prompt: Option<&str>) -> String {
     let files = staged_file_names(repo_path).await;
-    deterministic_subject_from_files(&files)
+    let meaningful = filter_meaningful_scope_files(&files);
+    deterministic_subject_from_files(&meaningful)
 }
 
 async fn staged_file_names(repo_path: &Path) -> Vec<String> {
@@ -2708,8 +2739,36 @@ async fn pending_file_names(repo_path: &Path) -> Vec<String> {
     }
 }
 
+fn is_internal_artifact_path(path: &str) -> bool {
+    path.starts_with(".harness/")
+        || path.starts_with("runs/")
+        || path == ".harness"
+        || path == "runs"
+}
+
+fn filter_meaningful_scope_files(files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|f| !is_internal_artifact_path(f))
+        .cloned()
+        .collect()
+}
+
+async fn unstage_internal_artifacts(
+    ctx: &CycleContext,
+    policy: &CommandPolicy,
+) -> CommandExecution {
+    execute_command_line(
+        WorkStage::Act,
+        "git reset -q HEAD -- .harness runs",
+        ctx,
+        policy,
+    )
+    .await
+}
+
 fn deterministic_subject_from_files(files: &[String]) -> String {
-    let mut names = files.to_vec();
+    let mut names = filter_meaningful_scope_files(files);
     names.sort();
     names.dedup();
 
@@ -3355,6 +3414,17 @@ mod tests {
             "improve workflow quality",
             &files
         ));
+    }
+
+    #[test]
+    fn filter_meaningful_scope_files_excludes_internal_artifacts() {
+        let files = vec![
+            ".harness/coding-progress.json".to_string(),
+            "runs/runtime.log".to_string(),
+            "src/coding.rs".to_string(),
+        ];
+        let filtered = filter_meaningful_scope_files(&files);
+        assert_eq!(filtered, vec!["src/coding.rs".to_string()]);
     }
 
     #[test]

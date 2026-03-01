@@ -181,6 +181,7 @@ agent-harness code --repo /path/to/repo --time 1h \
 - Add explicit extras with `--allow-cmd <tool>` for non-default executables.
 - Every meaningful cleanup cycle attempts git sync (`fetch` + `pull`), commit, and push (with explicit event/log status).
 - Commit quality gate blocks internal-state-only diffs (for example `.harness/*`) unless `src/` or task-tied docs are also changed.
+- Cleanup un-stages harness-internal artifacts (`.harness/*`, `runs/*`) before commit so commit scope/subjects stay code-focused.
 - Commit subjects are strict conventional commits (`feat|fix|docs|test|refactor|chore`) with file-scoped subjects; generic templates (including variants of `build a generalizable ...` / `harness: coding cycle`) are hard-rejected.
 - Subject generation is deterministic from staged files, must reference changed scope, and still passes through short-window de-duplication.
 - Hard anti-noop defaults: `noop_streak_limit=3` triggers a forced concrete scoped code-change task; if that forced cycle still has no meaningful diff, the run aborts explicitly.
