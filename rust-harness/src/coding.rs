@@ -448,6 +448,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "remaining_sec": gate.remaining_sec_at(now),
                     "deadline_epoch": gate.deadline_epoch(),
                     "cycles_total": cycles_total,
+                    "supercycle": args.supercycle,
                     "prompt_provided": user_prompt.is_some(),
                 })),
             )?;
@@ -466,6 +467,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "cycle": cycles_total,
                     "executor": executor.name(),
                     "remaining_sec": gate.remaining_sec_at(now_unix()),
+                    "supercycle": args.supercycle,
                     "prompt_provided": user_prompt.is_some(),
                     "user_prompt": user_prompt.clone(),
                 })),
@@ -478,6 +480,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "cycle": cycles_total,
                     "deadline_epoch": gate.deadline_epoch(),
                     "remaining_sec": gate.remaining_sec_at(now_unix()),
+                    "supercycle": args.supercycle,
                     "prompt_provided": user_prompt.is_some(),
                     "user_prompt": user_prompt.clone(),
                 })),
@@ -518,6 +521,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             cycles_total,
             architecture_result.clone(),
             "feature",
+            args.supercycle,
         )?;
         let selected_task = architecture_result.selected_task.clone();
 
@@ -603,6 +607,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             cycles_total,
             feature_result.clone(),
             "conformance",
+            args.supercycle,
         )?;
         phase_results.push(feature_result);
 
@@ -658,6 +663,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             cycles_total,
             conformance_result.clone(),
             "cleanup",
+            args.supercycle,
         )?;
         phase_results.push(conformance_result.clone());
 
@@ -696,6 +702,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             cycles_total,
             cleanup_result.clone(),
             "pause",
+            args.supercycle,
         )?;
         phase_results.push(cleanup_result);
 
@@ -868,6 +875,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "success": cycle_success,
                     "runtime_ms": cycle_runtime_ms,
                     "remaining_sec": gate.remaining_sec_at(now_unix()),
+                    "supercycle": args.supercycle,
                 })),
         )?;
 
@@ -895,6 +903,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 cycles_total,
                 pause_result,
                 "architecture",
+                args.supercycle,
             )?;
 
             if args.cycle_pause_sec > 0 {
@@ -2969,6 +2978,7 @@ fn emit_phase_event(
     cycle: u64,
     result: PhaseResult,
     next_step: &str,
+    supercycle: bool,
 ) -> Result<()> {
     let data = json!({
         "cycle": cycle,
@@ -2978,6 +2988,7 @@ fn emit_phase_event(
         "success": result.success,
         "result": result.result,
         "next": next_step,
+        "supercycle": supercycle,
     });
 
     sink.emit(
