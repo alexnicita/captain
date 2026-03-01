@@ -806,10 +806,6 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 })),
         )?;
 
-        if args.supercycle {
-            break;
-        }
-
         if gate.is_active_at(now_unix()) {
             let pause_result = PhaseResult {
                 phase: CyclePhase::Pause,
