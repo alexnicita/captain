@@ -33,6 +33,10 @@ If you're migrating from Python-side orchestration helpers, see `MIGRATION.md`.
   - enforce minimum runtime + checklist completion gates
   - reusable `RuntimeGate` primitive with deadline/remaining semantics
   - start/status/stop lifecycle with JSON state + progress logs
+- **Code intelligence scaffold (`/code` + `src/code`)**
+  - architecture planning contract + diff generation prompts in `/code/prompts`
+  - Rust module scaffold in `src/code` for `plan -> generate diff -> apply`
+  - provider-backed planner/diff generator + git-apply applier
 - **Coding mode (timeboxed active execution)**
   - canonical interface: `repo + time`
   - guaranteed phase state machine per cycle: `architecture -> feature -> conformance -> cleanup -> pause` (repeats until deadline)

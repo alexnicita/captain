@@ -1,3 +1,4 @@
+pub mod code;
 pub mod coding;
 pub mod config;
 pub mod eval;
