@@ -806,6 +806,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 })),
         )?;
 
+        if args.supercycle {
+            break;
+        }
+
         if gate.is_active_at(now_unix()) {
             let pause_result = PhaseResult {
                 phase: CyclePhase::Pause,
@@ -1306,7 +1310,9 @@ async fn run_openclaw_agent_once(
         .arg("--session-id")
         .arg(session_id)
         .arg("--timeout")
-        .arg("240")
+        .arg("600")
+        .arg("--thinking")
+        .arg("high")
         .arg("--json")
         .arg("--message")
         .arg(prompt)
