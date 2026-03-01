@@ -197,6 +197,17 @@ pub struct HookResult {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct WatchdogRecovery {
+    success: bool,
+    subject: String,
+    message: String,
+    commit_detail: String,
+    push_attempted: bool,
+    push_success: Option<bool>,
+    push_detail: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 struct TaskProgressMemory {
@@ -767,7 +778,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 .with_data(serde_json::to_value(&counters)?),
         )?;
 
-        let commit_executed_ok = hook_results
+        let mut commit_executed_ok = hook_results
             .iter()
             .find(|hook| hook.name == "commit")
             .map(|hook| hook.success && !hook.skipped)
@@ -777,8 +788,44 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             last_commit_ok_epoch = now_unix();
         }
 
-        let commit_watchdog_breached =
+        let mut commit_watchdog_breached =
             now_unix().saturating_sub(last_commit_ok_epoch) >= COMMIT_WATCHDOG_SEC;
+
+        if commit_watchdog_breached {
+            let recovery = run_commit_watchdog_recovery(
+                &sink,
+                &cycle_id,
+                &repo_path,
+                cycles_total,
+                &args,
+                user_prompt.as_deref(),
+                executor.policy(),
+                selected_task.as_ref(),
+            )
+            .await?;
+
+            sink.emit(
+                &HarnessEvent::new(kinds::CODING_HEARTBEAT)
+                    .with_task_id(cycle_id.clone())
+                    .with_data(json!({
+                        "cycle": cycles_total,
+                        "warning": if recovery.success {
+                            "commit watchdog breached; recovered with forced allow-empty commit"
+                        } else {
+                            "commit watchdog breached: forced allow-empty commit failed"
+                        },
+                        "recovery": recovery,
+                        "commit_watchdog_sec": COMMIT_WATCHDOG_SEC,
+                        "seconds_since_last_commit": now_unix().saturating_sub(last_commit_ok_epoch),
+                    })),
+            )?;
+
+            if recovery.success {
+                commit_executed_ok = true;
+                last_commit_ok_epoch = now_unix();
+                commit_watchdog_breached = false;
+            }
+        }
 
         let cycle_success = phase_results.iter().all(|phase| phase.success)
             && plan_result.success
@@ -825,16 +872,6 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         )?;
 
         if commit_watchdog_breached {
-            sink.emit(
-                &HarnessEvent::new(kinds::CODING_HEARTBEAT)
-                    .with_task_id(cycle_id.clone())
-                    .with_data(json!({
-                        "cycle": cycles_total,
-                        "warning": "commit watchdog breached: no successful commit in required window",
-                        "commit_watchdog_sec": COMMIT_WATCHDOG_SEC,
-                        "seconds_since_last_commit": now_unix().saturating_sub(last_commit_ok_epoch),
-                    })),
-            )?;
             break;
         }
 
@@ -2225,6 +2262,104 @@ async fn run_cycle_hooks(
     }
 
     Ok(hooks)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_commit_watchdog_recovery(
+    sink: &EventSink,
+    cycle_id: &str,
+    repo_path: &Path,
+    cycle: u64,
+    args: &CodingRunArgs,
+    user_prompt: Option<&str>,
+    policy: &CommandPolicy,
+    selected_task: Option<&FeatureTask>,
+) -> Result<WatchdogRecovery> {
+    let subject = format!("watchdog keepalive cycle {cycle}");
+    let message = format!("chore(harness): {subject}");
+
+    let hook_ctx = CycleContext {
+        cycle,
+        repo_path: repo_path.to_path_buf(),
+        user_prompt: user_prompt.map(ToOwned::to_owned),
+        selected_task: selected_task.cloned(),
+    };
+
+    let commit_cmd = format!(
+        "git commit --allow-empty -m {}",
+        shell_words::quote(&message)
+    );
+    let commit_result = execute_command_line(WorkStage::Act, &commit_cmd, &hook_ctx, policy).await;
+    let commit_detail = if commit_result.success {
+        "git commit --allow-empty ok".to_string()
+    } else {
+        summarize_error(&commit_result)
+    };
+
+    emit_git_commit_event(
+        sink,
+        cycle_id,
+        cycle,
+        commit_result.success,
+        false,
+        Some(subject.as_str()),
+        Some(message.as_str()),
+        if commit_result.success {
+            "ok"
+        } else {
+            "failed"
+        },
+        &commit_detail,
+    )?;
+
+    let mut push_attempted = false;
+    let mut push_success = None;
+    let mut push_detail = None;
+
+    if commit_result.success && args.push_each_cycle {
+        push_attempted = true;
+        let push_result = execute_command_line(WorkStage::Act, "git push", &hook_ctx, policy).await;
+        let detail = if push_result.success {
+            "git push ok".to_string()
+        } else {
+            summarize_error(&push_result)
+        };
+        push_success = Some(push_result.success);
+        push_detail = Some(detail.clone());
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            push_result.success,
+            false,
+            Some(subject.as_str()),
+            Some(message.as_str()),
+            if push_result.success { "ok" } else { "failed" },
+            &detail,
+        )?;
+    } else {
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            true,
+            true,
+            Some(subject.as_str()),
+            Some(message.as_str()),
+            "skipped",
+            "watchdog recovery push not requested",
+        )?;
+    }
+
+    Ok(WatchdogRecovery {
+        success: commit_result.success,
+        subject,
+        message,
+        commit_detail,
+        push_attempted,
+        push_success,
+        push_detail,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
