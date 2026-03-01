@@ -103,6 +103,7 @@ Quick inspect latest capture:
 
 ```bash
 scripts/discriminator-capture-latest.sh 30
+scripts/discriminator-capture-latest.sh --json
 ```
 
 Coding mode guarantees the phase order each cycle:
