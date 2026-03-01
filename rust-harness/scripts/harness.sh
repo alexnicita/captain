@@ -109,6 +109,63 @@ if [[ -n "$PROMPT" && -n "$PROMPT_FILE" ]]; then
   exit 3
 fi
 
+# Provider bootstrap so "run as-is" works with OpenClaw auth profiles.
+# Priority:
+#   1) explicit env overrides already set by operator
+#   2) sane OpenAI defaults
+#   3) OPENAI_API_KEY loaded from OpenClaw auth profile store when available
+export HARNESS_PROVIDER="${HARNESS_PROVIDER:-http}"
+export HARNESS_PROVIDER_ENDPOINT="${HARNESS_PROVIDER_ENDPOINT:-https://api.openai.com/v1/chat/completions}"
+export HARNESS_MODEL="${HARNESS_MODEL:-gpt-5.1-codex}"
+
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  AUTH_PROFILES_PATH="${OPENCLAW_AUTH_PROFILES:-$HOME/.openclaw/agents/main/agent/auth-profiles.json}"
+  if [[ -f "$AUTH_PROFILES_PATH" ]]; then
+    PROFILE_CRED="$(python3 - "$AUTH_PROFILES_PATH" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    print("", end="")
+    raise SystemExit(0)
+
+profiles = (data.get("profiles") or {})
+
+for pid in ("openai:default", "openai:manual"):
+    key = ((profiles.get(pid) or {}).get("key") or "").strip()
+    if key:
+        print(key, end="")
+        raise SystemExit(0)
+
+# Fallback: some setups only have openai-codex OAuth access token.
+for pid in ("openai-codex:default", "openai-codex:manual"):
+    access = ((profiles.get(pid) or {}).get("access") or "").strip()
+    if access:
+        print(access, end="")
+        raise SystemExit(0)
+
+print("", end="")
+PY
+)"
+    if [[ -n "$PROFILE_CRED" ]]; then
+      export OPENAI_API_KEY="$PROFILE_CRED"
+      echo "[harness] loaded provider credential from OpenClaw auth profiles."
+    fi
+    unset PROFILE_CRED
+  fi
+fi
+
+if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  echo "[harness] error: OPENAI_API_KEY is unset and no OpenClaw auth profile credential was found." >&2
+  echo "[harness] hint: run 'openclaw models status --json' to verify configured auth profiles." >&2
+  exit 4
+fi
+
 "$ROOT_DIR/scripts/check_toolchain.sh"
 
 CMD=(
@@ -156,6 +213,7 @@ fi
 echo "[harness] repo=$REPO_DIR"
 echo "[harness] time=$TIME_INPUT"
 echo "[harness] executor=$EXECUTOR"
+echo "[harness] provider=$HARNESS_PROVIDER endpoint=$HARNESS_PROVIDER_ENDPOINT model=$HARNESS_MODEL"
 echo "[harness] heartbeat_sec=$HEARTBEAT_SEC cycle_pause_sec=$CYCLE_PAUSE_SEC"
 if [[ -n "$PROMPT" || -n "$PROMPT_FILE" ]]; then
   echo "[harness] prompt=provided"

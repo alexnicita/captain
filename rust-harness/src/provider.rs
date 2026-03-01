@@ -3,6 +3,8 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,7 +85,7 @@ impl HttpProvider {
         let endpoint = cfg
             .endpoint
             .clone()
-            .unwrap_or_else(|| "http://localhost:11434/v1/chat/completions".to_string());
+            .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
 
         let endpoint_url = reqwest::Url::parse(&endpoint)
             .with_context(|| format!("invalid provider endpoint URL: {endpoint}"))?;
@@ -93,10 +95,7 @@ impl HttpProvider {
             .build()
             .context("failed to construct reqwest client")?;
 
-        let api_key = cfg
-            .api_key_env
-            .as_ref()
-            .and_then(|key_name| std::env::var(key_name).ok());
+        let api_key = resolve_provider_api_key(cfg);
 
         Ok(Self {
             client,
@@ -132,6 +131,64 @@ impl HttpProvider {
             }),
         ]
     }
+}
+
+fn resolve_provider_api_key(cfg: &ProviderConfig) -> Option<String> {
+    if let Some(key) = cfg
+        .api_key_env
+        .as_ref()
+        .and_then(|key_name| std::env::var(key_name).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
+        return Some(key);
+    }
+
+    let auth_path = std::env::var("OPENCLAW_AUTH_PROFILES")
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or_else(default_openclaw_auth_profiles_path);
+
+    load_key_from_openclaw_auth_profiles(&auth_path)
+}
+
+fn default_openclaw_auth_profiles_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".openclaw/agents/main/agent/auth-profiles.json")
+}
+
+fn load_key_from_openclaw_auth_profiles(path: &PathBuf) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let payload: Value = serde_json::from_str(&text).ok()?;
+    let profiles = payload.pointer("/profiles")?.as_object()?;
+
+    // Prefer static OpenAI API keys when available.
+    for id in ["openai:default", "openai:manual"] {
+        if let Some(key) = profiles
+            .get(id)
+            .and_then(|profile| profile.get("key"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(key.to_string());
+        }
+    }
+
+    // Fallback: OpenAI Codex OAuth access token.
+    for id in ["openai-codex:default", "openai-codex:manual"] {
+        if let Some(access) = profiles
+            .get(id)
+            .and_then(|profile| profile.get("access"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(access.to_string());
+        }
+    }
+
+    None
 }
 
 #[async_trait]
@@ -250,7 +307,7 @@ pub fn build_provider(cfg: &ProviderConfig) -> BuiltProvider {
             Err(err) => BuiltProvider {
                 provider: Box::new(HttpProviderStub {
                     endpoint: cfg.endpoint.clone().unwrap_or_else(|| {
-                        "http://localhost:11434/v1/chat/completions".to_string()
+                        "https://api.openai.com/v1/chat/completions".to_string()
                     }),
                     model: cfg.model.clone(),
                 }),
@@ -264,7 +321,7 @@ pub fn build_provider(cfg: &ProviderConfig) -> BuiltProvider {
                 endpoint: cfg
                     .endpoint
                     .clone()
-                    .unwrap_or_else(|| "http://localhost:11434/v1/chat/completions".to_string()),
+                    .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string()),
                 model: cfg.model.clone(),
             }),
             requested_kind: requested,

@@ -42,9 +42,9 @@ pub struct SchedulerConfig {
 impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
-            kind: "echo".to_string(),
-            model: "local-stub".to_string(),
-            endpoint: Some("http://localhost:11434/v1/chat/completions".to_string()),
+            kind: "http".to_string(),
+            model: "gpt-5.1-codex".to_string(),
+            endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
             api_key_env: Some("OPENAI_API_KEY".to_string()),
             timeout_ms: 20_000,
             max_retries: 2,

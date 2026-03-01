@@ -1,9 +1,9 @@
 event_log_path = "./runs/events.jsonl"
 
 [provider]
-kind = "echo"
-model = "local-stub"
-endpoint = "http://localhost:11434/v1/chat/completions"
+kind = "http"
+model = "gpt-5.1-codex"
+endpoint = "https://api.openai.com/v1/chat/completions"
 api_key_env = "OPENAI_API_KEY"
 timeout_ms = 20000
 max_retries = 2
