@@ -47,6 +47,15 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
+    /// Simple default launcher for coding mode.
+    Start {
+        /// Optional objective prompt for this run.
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Total run time (default: 5m).
+        #[arg(long, default_value = "5m")]
+        time: String,
+    },
     /// Run a single task through provider/tool orchestrator.
     Run {
         #[arg(long)]
@@ -197,6 +206,35 @@ async fn main() -> Result<()> {
     let policy = make_policy(&cli);
 
     match cli.command {
+        Some(Commands::Start { prompt, time }) => {
+            let args = CodingModeArgs {
+                repo: ".".to_string(),
+                time,
+                heartbeat_sec: 30,
+                cycle_pause_sec: 2,
+                executor: "openclaw".to_string(),
+                supercycle: true,
+                research_budget_sec: 20,
+                planning_budget_sec: 40,
+                require_commit_each_cycle: true,
+                plan_cmd: Vec::new(),
+                act_cmd: Vec::new(),
+                verify_cmd: Vec::new(),
+                allow_cmd: Vec::new(),
+                commit_each_cycle: true,
+                push_each_cycle: true,
+                cycle_output_file: None,
+                runtime_log_file: Some("./runs/runtime.log".to_string()),
+                thought_log_file: Some("./runs/thoughts.md".to_string()),
+                noop_streak_limit: 3,
+                conformance_interval_unchanged: 3,
+                progress_file: None,
+                run_lock_file: None,
+                prompt,
+                prompt_file: None,
+            };
+            coding_mode(&cfg, args).await?
+        }
         Some(Commands::Run { objective, task_id }) => {
             run_once(objective, task_id, &cfg, &policy).await?
         }
