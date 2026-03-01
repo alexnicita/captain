@@ -23,6 +23,7 @@ const OUTPUT_TAIL_LIMIT: usize = 4_000;
 const TASK_SELECTION_COOLDOWN_CYCLES: u64 = 2;
 const TASK_NO_DIFF_ESCALATION_THRESHOLD: u64 = 2;
 const CODEGEN_MAX_ATTEMPTS: usize = 3;
+const COMMIT_WATCHDOG_SEC: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -425,6 +426,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let mut noop_streak = 0u64;
     let mut unchanged_since_conformance = 0u64;
     let mut counters = EventCounters::default();
+    let mut last_commit_ok_epoch = start_epoch;
 
     while gate.is_active_at(now_unix()) {
         let now = now_unix();
@@ -771,12 +773,20 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             .map(|hook| hook.success && !hook.skipped)
             .unwrap_or(false);
 
+        if commit_executed_ok {
+            last_commit_ok_epoch = now_unix();
+        }
+
+        let commit_watchdog_breached =
+            now_unix().saturating_sub(last_commit_ok_epoch) >= COMMIT_WATCHDOG_SEC;
+
         let cycle_success = phase_results.iter().all(|phase| phase.success)
             && plan_result.success
             && act_result.success
             && verify_result.success
             && hook_results.iter().all(|hook| hook.success || hook.skipped)
-            && (!args.require_commit_each_cycle || commit_executed_ok);
+            && (!args.require_commit_each_cycle || commit_executed_ok)
+            && !commit_watchdog_breached;
         if cycle_success {
             cycles_succeeded += 1;
         } else {
@@ -790,8 +800,16 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 .with_data(json!({
                     "mode": "coding",
                     "cycle": cycles_total,
-                    "reason": if cycle_success { "cycle_complete" } else { "cycle_failed" },
+                    "reason": if commit_watchdog_breached {
+                        "commit_watchdog_breach"
+                    } else if cycle_success {
+                        "cycle_complete"
+                    } else {
+                        "cycle_failed"
+                    },
                     "runtime_ms": cycle_runtime_ms,
+                    "commit_watchdog_sec": COMMIT_WATCHDOG_SEC,
+                    "seconds_since_last_commit": now_unix().saturating_sub(last_commit_ok_epoch),
                 })),
         )?;
 
@@ -805,6 +823,20 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "remaining_sec": gate.remaining_sec_at(now_unix()),
                 })),
         )?;
+
+        if commit_watchdog_breached {
+            sink.emit(
+                &HarnessEvent::new(kinds::CODING_HEARTBEAT)
+                    .with_task_id(cycle_id.clone())
+                    .with_data(json!({
+                        "cycle": cycles_total,
+                        "warning": "commit watchdog breached: no successful commit in required window",
+                        "commit_watchdog_sec": COMMIT_WATCHDOG_SEC,
+                        "seconds_since_last_commit": now_unix().saturating_sub(last_commit_ok_epoch),
+                    })),
+            )?;
+            break;
+        }
 
         if gate.is_active_at(now_unix()) {
             let pause_result = PhaseResult {
