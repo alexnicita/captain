@@ -317,16 +317,17 @@ async fn main() -> Result<()> {
         }) => eval(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
         None => {
             if let Some(prompt) = cli.quick_prompt {
+                prepare_start_workspace(".").await?;
                 let args = CodingModeArgs {
                     repo: ".".to_string(),
                     time: "1h".to_string(),
                     heartbeat_sec: 30,
                     cycle_pause_sec: 2,
                     executor: "openclaw".to_string(),
-                    supercycle: false,
-                    research_budget_sec: 15,
-                    planning_budget_sec: 20,
-                    require_commit_each_cycle: false,
+                    supercycle: true,
+                    research_budget_sec: 20,
+                    planning_budget_sec: 40,
+                    require_commit_each_cycle: true,
                     plan_cmd: Vec::new(),
                     act_cmd: Vec::new(),
                     verify_cmd: Vec::new(),
