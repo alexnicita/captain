@@ -7,13 +7,15 @@ cd "$ROOT_DIR"
 DURATION="${1:-1h}"
 PROMPT="${HARNESS_PROMPT:-Implement concrete Rust code changes in src/ with tests; avoid docs-only edits. Keep commits specific and useful.}"
 
+# Clean stale harness runtime artifacts so start can run from a clean git tree.
+rm -f .git/.agent-harness-code.lock
+rm -rf .harness/supercycle
+
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "[start] repo is dirty. Commit/stash first, then rerun ./start.sh" >&2
   git status --short
   exit 2
 fi
-
-rm -f .git/.agent-harness-code.lock
 
 export HARNESS_PROVIDER="http"
 export HARNESS_PROVIDER_ENDPOINT="https://api.openai.com/v1/responses"
