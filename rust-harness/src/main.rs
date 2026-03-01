@@ -16,7 +16,9 @@ use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use std::fs;
+use std::path::Path;
 use std::time::Duration;
+use tokio::process::Command;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
@@ -207,6 +209,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Start { prompt, time }) => {
+            prepare_start_workspace(".").await?;
             let args = CodingModeArgs {
                 repo: ".".to_string(),
                 time,
@@ -579,6 +582,34 @@ struct CodingModeArgs {
     run_lock_file: Option<String>,
     prompt: Option<String>,
     prompt_file: Option<String>,
+}
+
+async fn prepare_start_workspace(repo: &str) -> Result<()> {
+    let repo_path = Path::new(repo);
+
+    // Stop stale/parallel harness runners so `cargo run -- start` is clean by default.
+    let _ = Command::new("pkill")
+        .args([
+            "-f",
+            "scripts/harness\\.sh|agent-harness.* code|target/debug/agent-harness.* code",
+        ])
+        .output()
+        .await;
+
+    let lock_path = repo_path.join(".git/.agent-harness-code.lock");
+    let _ = fs::remove_file(lock_path);
+
+    let supercycle_dir = repo_path.join(".harness/supercycle");
+    if supercycle_dir.exists() {
+        fs::remove_dir_all(&supercycle_dir)?;
+    }
+
+    let runs_dir = repo_path.join("runs");
+    if runs_dir.exists() {
+        fs::remove_dir_all(&runs_dir)?;
+    }
+
+    Ok(())
 }
 
 async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
