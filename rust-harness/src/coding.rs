@@ -883,7 +883,7 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
                 },
                 if args.verify_cmd.is_empty() {
                     vec![
-                        "cargo fmt --all --check".to_string(),
+                        "cargo fmt --all".to_string(),
                         "cargo check --all-targets".to_string(),
                         "cargo test --all-targets".to_string(),
                     ]

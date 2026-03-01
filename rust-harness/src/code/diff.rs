@@ -3,6 +3,7 @@ use crate::code::task::{ArchitecturePlan, CodeDiffProposal, CodeTask};
 use crate::provider::{Provider, ProviderRequest};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use serde_json::Value;
 use std::sync::Arc;
 
 pub struct ProviderDiffGenerator {
@@ -24,7 +25,7 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
         repo_snapshot: &str,
     ) -> Result<CodeDiffProposal> {
         let objective = format!(
-            "Generate a valid unified git diff for task {}. Follow plan summary: {}. Return ONLY raw patch text that starts with 'diff --git'. If no valid patch can be produced, return exactly NO_VALID_PATCH.",
+            "Generate a valid unified git diff for task {}. Follow plan summary: {}. Return ONLY raw patch text that starts with 'diff --git'. If valid diff formatting is not possible, return JSON: {{\"edits\":[{{\"path\":\"relative/file.rs\",\"content\":\"full new file content\"}}]}}",
             task.id, plan.summary
         );
 
@@ -39,18 +40,32 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
         };
 
         let resp = self.provider.generate(&req).await?;
-        let patch = extract_diff(&resp.message)
-            .ok_or_else(|| anyhow!("provider response did not include a unified diff"))?;
-        let touched_files = extract_touched_files(&patch);
+        if let Some(patch) = extract_diff(&resp.message) {
+            let touched_files = extract_touched_files(&patch);
+            return Ok(CodeDiffProposal {
+                summary: format!(
+                    "provider generated patch touching {} files",
+                    touched_files.len()
+                ),
+                unified_diff: patch,
+                touched_files,
+            });
+        }
 
-        Ok(CodeDiffProposal {
-            summary: format!(
-                "provider generated patch touching {} files",
-                touched_files.len()
-            ),
-            unified_diff: patch,
-            touched_files,
-        })
+        if let Some((paths, sentinel)) = extract_json_edits(&resp.message) {
+            return Ok(CodeDiffProposal {
+                summary: format!(
+                    "provider generated json edits touching {} files",
+                    paths.len()
+                ),
+                unified_diff: sentinel,
+                touched_files: paths,
+            });
+        }
+
+        Err(anyhow!(
+            "provider response did not include a unified diff or json edits"
+        ))
     }
 }
 
@@ -88,6 +103,40 @@ fn sanitize_unified_diff(raw: &str) -> Option<String> {
     }
 
     Some(normalized.join("\n"))
+}
+
+fn extract_json_edits(message: &str) -> Option<(Vec<String>, String)> {
+    let trimmed = message.trim();
+
+    let json_candidate = if trimmed.starts_with("```") {
+        let start = trimmed.find('{')?;
+        let end = trimmed.rfind('}')?;
+        &trimmed[start..=end]
+    } else {
+        trimmed
+    };
+
+    let payload: Value = serde_json::from_str(json_candidate).ok()?;
+    let edits = payload.get("edits")?.as_array()?;
+    if edits.is_empty() {
+        return None;
+    }
+
+    let mut paths = Vec::new();
+    for edit in edits {
+        let path = edit.get("path")?.as_str()?.trim();
+        let content = edit.get("content")?.as_str()?;
+        if path.is_empty() || path.starts_with('/') || path.contains("..") || content.is_empty() {
+            return None;
+        }
+        paths.push(path.to_string());
+    }
+
+    paths.sort();
+    paths.dedup();
+
+    let sentinel = format!("HARNESS_JSON_EDITS\n{}", payload);
+    Some((paths, sentinel))
 }
 
 fn extract_touched_files(diff: &str) -> Vec<String> {

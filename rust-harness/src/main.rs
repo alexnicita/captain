@@ -36,8 +36,12 @@ struct Cli {
     #[arg(long)]
     deny_tool: Vec<String>,
 
+    /// Shortcut: run coding mode with this prompt (equivalent to `code --repo . --time 1h --executor openclaw --prompt ...`)
+    #[arg(index = 1)]
+    quick_prompt: Option<String>,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -185,14 +189,18 @@ async fn main() -> Result<()> {
     let policy = make_policy(&cli);
 
     match cli.command {
-        Commands::Run { objective, task_id } => run_once(objective, task_id, &cfg, &policy).await?,
-        Commands::Loop {
+        Some(Commands::Run { objective, task_id }) => {
+            run_once(objective, task_id, &cfg, &policy).await?
+        }
+        Some(Commands::Loop {
             interval_seconds,
             objective,
             max_iterations,
-        } => loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?,
-        Commands::Batch { objectives_file } => batch_mode(&objectives_file, &cfg, &policy).await?,
-        Commands::Code {
+        }) => loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?,
+        Some(Commands::Batch { objectives_file }) => {
+            batch_mode(&objectives_file, &cfg, &policy).await?
+        }
+        Some(Commands::Code {
             repo,
             time,
             heartbeat_sec,
@@ -213,7 +221,7 @@ async fn main() -> Result<()> {
             run_lock_file,
             prompt,
             prompt_file,
-        } => {
+        }) => {
             let args = CodingModeArgs {
                 repo,
                 time,
@@ -238,18 +246,49 @@ async fn main() -> Result<()> {
             };
             coding_mode(&cfg, args).await?
         }
-        Commands::Gate { command } => gate_command(command).await?,
-        Commands::Status => status(&cfg).await?,
-        Commands::Replay {
+        Some(Commands::Gate { command }) => gate_command(command).await?,
+        Some(Commands::Status) => status(&cfg).await?,
+        Some(Commands::Replay {
             path,
             run_id,
             latest_run,
-        } => replay(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
-        Commands::Eval {
+        }) => replay(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
+        Some(Commands::Eval {
             path,
             run_id,
             latest_run,
-        } => eval(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
+        }) => eval(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
+        None => {
+            if let Some(prompt) = cli.quick_prompt {
+                let args = CodingModeArgs {
+                    repo: ".".to_string(),
+                    time: "1h".to_string(),
+                    heartbeat_sec: 30,
+                    cycle_pause_sec: 2,
+                    executor: "openclaw".to_string(),
+                    plan_cmd: Vec::new(),
+                    act_cmd: Vec::new(),
+                    verify_cmd: Vec::new(),
+                    allow_cmd: Vec::new(),
+                    commit_each_cycle: true,
+                    push_each_cycle: true,
+                    cycle_output_file: None,
+                    runtime_log_file: Some("./runs/runtime.log".to_string()),
+                    thought_log_file: Some("./runs/thoughts.md".to_string()),
+                    noop_streak_limit: 3,
+                    conformance_interval_unchanged: 3,
+                    progress_file: None,
+                    run_lock_file: None,
+                    prompt: Some(prompt),
+                    prompt_file: None,
+                };
+                coding_mode(&cfg, args).await?
+            } else {
+                return Err(anyhow!(
+                    "no command provided (use a subcommand or pass a prompt string)"
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -653,13 +692,13 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Commands::Code {
+            Some(Commands::Code {
                 repo,
                 time,
                 prompt,
                 prompt_file,
                 ..
-            } => {
+            }) => {
                 assert_eq!(repo, ".");
                 assert_eq!(time, "1h");
                 assert_eq!(prompt.as_deref(), Some("focus on portability"));
@@ -690,5 +729,12 @@ mod tests {
     #[test]
     fn parse_executor_preset_rejects_invalid() {
         assert!(parse_executor_preset("python").is_err());
+    }
+
+    #[test]
+    fn cli_parses_quick_prompt_shortcut() {
+        let cli = Cli::try_parse_from(["agent-harness", "implement auth retries"]).unwrap();
+        assert_eq!(cli.quick_prompt.as_deref(), Some("implement auth retries"));
+        assert!(cli.command.is_none());
     }
 }

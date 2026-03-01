@@ -100,6 +100,20 @@ cargo run -- replay --path ./runs/events.jsonl --latest-run
 cargo run -- eval --path ./runs/events.jsonl --run-id run-123
 ```
 
+Shortcut coding launch (OpenClaw executor):
+
+```bash
+cargo run -- "implement feature X with tests"
+```
+
+This is equivalent to running coding mode with defaults:
+- repo `.`
+- time `1h`
+- executor `openclaw`
+- commit + push each cycle enabled
+- runtime/thought logs under `./runs/`
+
+
 `status` reports provider resolution (`requested_kind`, `resolved_kind`, `fallback_reason`) so fallback-to-stub behavior is explicit.
 
 ## Config
