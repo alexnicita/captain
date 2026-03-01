@@ -417,6 +417,11 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let mut cycles_succeeded = 0u64;
     let mut cycles_failed = 0u64;
     let mut next_heartbeat_epoch = start_epoch;
+    let planning_window_sec = if args.supercycle {
+        ((args.duration_sec as f64) * 0.20).ceil() as u64
+    } else {
+        0
+    };
     let mut noop_streak = 0u64;
     let mut unchanged_since_conformance = 0u64;
     let mut counters = EventCounters::default();
@@ -468,14 +473,17 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         let mut phase_results = Vec::new();
 
         if args.supercycle {
-            run_supercycle_planning(
-                &repo_path,
-                cycles_total,
-                user_prompt.as_deref(),
-                args.research_budget_sec,
-                args.planning_budget_sec,
-            )
-            .await?;
+            let elapsed_now = gate.elapsed_sec_at(now_unix());
+            if elapsed_now <= planning_window_sec {
+                run_supercycle_planning(
+                    &repo_path,
+                    cycles_total,
+                    user_prompt.as_deref(),
+                    args.research_budget_sec,
+                    args.planning_budget_sec,
+                )
+                .await?;
+            }
         }
 
         let forced_mutation_cycle = noop_streak >= noop_streak_limit;
@@ -827,6 +835,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     }
 
     let elapsed_sec = gate.elapsed_sec_at(now_unix());
+
+    if args.supercycle {
+        let _ = write_postcoding_task_refresh(&repo_path, cycles_total, user_prompt.as_deref());
+    }
 
     sink.emit(
         &HarnessEvent::new(kinds::CODING_RUN_FINISHED).with_data(json!({
@@ -2302,6 +2314,37 @@ fn collect_src_files(dir: PathBuf, out: &mut Vec<PathBuf>) -> Result<()> {
             out.push(path);
         }
     }
+    Ok(())
+}
+
+fn write_postcoding_task_refresh(
+    repo_path: &Path,
+    cycle: u64,
+    user_prompt: Option<&str>,
+) -> Result<()> {
+    let planning_dir = repo_path.join(".harness/supercycle");
+    fs::create_dir_all(&planning_dir)?;
+
+    let mut src_files = Vec::new();
+    collect_src_files(repo_path.join("src"), &mut src_files)?;
+    src_files.sort();
+
+    let followup = planning_dir.join(format!("cycle-{}-FOLLOWUP_TASKS.md", cycle));
+    let prompt = user_prompt.unwrap_or("");
+    let mut out = String::from("# FOLLOWUP_TASKS\n\n");
+    out.push_str(&format!("Prompt context: {prompt}\n\n"));
+    out.push_str("## Next coding backlog\n");
+    for path in src_files.iter().take(30) {
+        let rel = path
+            .strip_prefix(repo_path)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        out.push_str(&format!(
+            "- [ ] Add one reliability/test improvement in `{rel}`\n"
+        ));
+    }
+    fs::write(followup, out)?;
     Ok(())
 }
 
