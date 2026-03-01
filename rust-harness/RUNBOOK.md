@@ -99,6 +99,12 @@ Key files:
 - copied prompt files (`cycle-*-attempt-*.prompt.txt`)
 - `console.log`, `runtime-capture.log`, `thoughts-capture.md`, `events.jsonl`
 
+Quick inspect latest capture:
+
+```bash
+scripts/discriminator-capture-latest.sh 30
+```
+
 Coding mode guarantees the phase order each cycle:
 
 `architecture -> feature -> conformance -> cleanup -> pause`
