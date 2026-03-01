@@ -9,7 +9,7 @@ use crate::runtime_gate::RuntimeGate;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -24,6 +24,8 @@ const TASK_SELECTION_COOLDOWN_CYCLES: u64 = 2;
 const TASK_NO_DIFF_ESCALATION_THRESHOLD: u64 = 2;
 const CODEGEN_MAX_ATTEMPTS: usize = 3;
 const OPENCLAW_ATTEMPTS_PER_CYCLE: usize = 1;
+const OPENCLAW_PLAN_TIMEOUT_SEC: u64 = 240;
+const OPENCLAW_CODE_TIMEOUT_SEC: u64 = 600;
 const COMMIT_WATCHDOG_SEC: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,6 +209,16 @@ struct WatchdogRecovery {
     push_attempted: bool,
     push_success: Option<bool>,
     push_detail: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct OpenClawExecutionPlan {
+    target_files: Vec<String>,
+    target_symbols: Vec<String>,
+    behavior_delta: String,
+    test_delta: String,
+    commit_subject: String,
+    raw_json: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -613,11 +625,19 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         phase_results.push(feature_result);
 
         let mutated_this_cycle = repo_dirty(&repo_path).await.unwrap_or(false);
+        let pending_for_eligibility = pending_file_names(&repo_path).await;
+        let commit_eligible_this_cycle =
+            commit_has_meaningful_scope(&pending_for_eligibility, selected_task.as_ref());
         let should_run_conformance = mutated_this_cycle
             || unchanged_since_conformance >= conformance_interval_unchanged.saturating_sub(1);
 
         let verify_result = if !(plan_result.success && act_result.success) {
             StageResult::skipped(WorkStage::Verify, "feature stage failed")
+        } else if !commit_eligible_this_cycle {
+            StageResult::skipped(
+                WorkStage::Verify,
+                "pre-commit eligibility gate: non-meaningful pending changes",
+            )
         } else if should_run_conformance {
             executor.verify(&ctx).await
         } else {
@@ -1234,12 +1254,66 @@ async fn run_openclaw_codegen_stage(
     let mut attempts = Vec::new();
     let mut last_error: Option<String> = None;
 
+    let plan_prompt = build_openclaw_plan_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
+    let plan_session = format!("harness-plan-{}", ctx.cycle);
+    let validated_plan = match run_openclaw_agent_text_once(
+        &ctx.repo_path,
+        &plan_prompt,
+        &plan_session,
+        OPENCLAW_PLAN_TIMEOUT_SEC,
+    )
+    .await
+    {
+        Ok(plan_text) => match parse_openclaw_execution_plan(&plan_text) {
+            Some(plan) => plan,
+            None => {
+                return StageResult {
+                    stage: WorkStage::Act,
+                    success: false,
+                    error: Some(
+                        "openclaw plan pass did not return valid execution plan json".to_string(),
+                    ),
+                    commands: vec![CommandExecution {
+                        stage: WorkStage::Act,
+                        command: "openclaw planning pass".to_string(),
+                        argv: vec!["openclaw".to_string(), "agent".to_string()],
+                        success: false,
+                        exit_code: Some(1),
+                        duration_ms: stage_start.elapsed().as_millis() as u64,
+                        stdout_tail: truncate_tail(&plan_text),
+                        stderr_tail: String::new(),
+                        error: Some("invalid execution plan schema".to_string()),
+                    }],
+                };
+            }
+        },
+        Err(err) => {
+            return StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(format!("openclaw planning pass failed: {err}")),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "openclaw planning pass".to_string(),
+                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: String::new(),
+                    stderr_tail: truncate_tail(&err.to_string()),
+                    error: Some(err.to_string()),
+                }],
+            };
+        }
+    };
+
     for attempt in 1..=OPENCLAW_ATTEMPTS_PER_CYCLE {
         let prompt = build_openclaw_json_only_prompt_with_attempt(
             ctx,
             selected_task,
             user_prompt,
             &repo_snapshot,
+            &validated_plan,
             attempt,
             last_error.as_deref(),
         );
@@ -1398,6 +1472,74 @@ async fn run_openclaw_codegen_stage(
     }
 }
 
+async fn run_exa_research_once(repo_path: &Path, prompt: &str, timeout_sec: u64) -> Result<String> {
+    let api_key = std::env::var("EXA_API_KEY").context("EXA_API_KEY not set")?;
+    let query = truncate_tail(prompt);
+    let payload = json!({
+        "query": query,
+        "numResults": 5,
+        "type": "auto",
+        "contents": {
+            "text": true,
+            "highlights": {
+                "numSentences": 2,
+                "highlightsPerUrl": 3
+            }
+        }
+    });
+
+    let output = Command::new("curl")
+        .arg("-sS")
+        .arg("--max-time")
+        .arg(timeout_sec.to_string())
+        .arg("-H")
+        .arg("Content-Type: application/json")
+        .arg("-H")
+        .arg(format!("x-api-key: {api_key}"))
+        .arg("-d")
+        .arg(payload.to_string())
+        .arg("https://api.exa.ai/search")
+        .current_dir(repo_path)
+        .output()
+        .await
+        .context("failed to execute exa search curl")?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "exa search failed with {}: {}",
+            output.status,
+            truncate_tail(&String::from_utf8_lossy(&output.stderr))
+        ));
+    }
+
+    let body = String::from_utf8_lossy(&output.stdout).to_string();
+    let parsed: Value =
+        serde_json::from_str(&body).map_err(|e| anyhow!("exa response parse failed: {e}"))?;
+    let mut out = String::from("# EXA_RESEARCH\n\n");
+    if let Some(results) = parsed.get("results").and_then(Value::as_array) {
+        for (idx, item) in results.iter().enumerate() {
+            let title = item
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("(untitled)");
+            let url = item
+                .get("url")
+                .and_then(Value::as_str)
+                .unwrap_or("(no url)");
+            out.push_str(&format!("## Result {}: {}\n{}\n", idx + 1, title, url));
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                out.push_str(&format!("{}\n\n", truncate_tail(text)));
+            } else if let Some(highlights) = item.get("highlights").and_then(Value::as_array) {
+                for hl in highlights.iter().filter_map(Value::as_str).take(3) {
+                    out.push_str(&format!("- {}\n", hl));
+                }
+                out.push('\n');
+            }
+        }
+    }
+    Ok(out)
+}
+
 async fn run_openclaw_agent_text_once(
     repo_path: &Path,
     prompt: &str,
@@ -1450,7 +1592,7 @@ async fn run_openclaw_agent_once(
         .arg("--session-id")
         .arg(session_id)
         .arg("--timeout")
-        .arg("600")
+        .arg(OPENCLAW_CODE_TIMEOUT_SEC.to_string())
         .arg("--thinking")
         .arg("low")
         .arg("--json")
@@ -1475,11 +1617,83 @@ async fn run_openclaw_agent_once(
     Ok((payload, stderr_text))
 }
 
+fn build_openclaw_plan_prompt(
+    ctx: &CycleContext,
+    selected_task: &FeatureTask,
+    user_prompt: Option<&str>,
+    repo_snapshot: &str,
+) -> String {
+    let user_prompt = user_prompt.unwrap_or("");
+    let research = load_latest_research_context(&ctx.repo_path);
+    format!(
+        "Return STRICT JSON only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nSchema:\n{{\n  \"target_files\": [\"src/path.rs\"],\n  \"target_symbols\": [\"fn_name_or_module\"],\n  \"behavior_delta\": \"one concrete behavior improvement\",\n  \"test_delta\": \"one concrete test change\",\n  \"commit_subject\": \"fix(scope): specific change\"\n}}\n\nRules:\n- Output JSON object only.\n- Be concrete and executable.\n- Must target src/ and tests.\n- No docs-only plans.\n- No extra keys.",
+        cycle = ctx.cycle,
+        task = selected_task.title,
+        source = selected_task.source,
+        line = selected_task.selected_line,
+        user_prompt = user_prompt,
+        snapshot = repo_snapshot,
+        research = research,
+    )
+}
+
+fn parse_openclaw_execution_plan(message: &str) -> Option<OpenClawExecutionPlan> {
+    let trimmed = message.trim();
+    let candidate = if trimmed.starts_with("```") {
+        let start = trimmed.find('{')?;
+        let end = trimmed.rfind('}')?;
+        &trimmed[start..=end]
+    } else {
+        trimmed
+    };
+
+    let value: Value = serde_json::from_str(candidate).ok()?;
+    let target_files = value
+        .get("target_files")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+        .collect::<Vec<_>>();
+    let target_symbols = value
+        .get("target_symbols")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(ToOwned::to_owned))
+        .collect::<Vec<_>>();
+    let behavior_delta = value.get("behavior_delta")?.as_str()?.trim().to_string();
+    let test_delta = value.get("test_delta")?.as_str()?.trim().to_string();
+    let commit_subject = value.get("commit_subject")?.as_str()?.trim().to_string();
+
+    if target_files.is_empty()
+        || target_symbols.is_empty()
+        || behavior_delta.is_empty()
+        || test_delta.is_empty()
+        || commit_subject.is_empty()
+    {
+        return None;
+    }
+
+    if !target_files.iter().any(|f| f.starts_with("src/")) {
+        return None;
+    }
+
+    let raw_json = serde_json::to_string_pretty(&value).ok()?;
+    Some(OpenClawExecutionPlan {
+        target_files,
+        target_symbols,
+        behavior_delta,
+        test_delta,
+        commit_subject,
+        raw_json,
+    })
+}
+
 fn build_openclaw_json_only_prompt_with_attempt(
     ctx: &CycleContext,
     selected_task: &FeatureTask,
     user_prompt: Option<&str>,
     repo_snapshot: &str,
+    validated_plan: &OpenClawExecutionPlan,
     attempt: usize,
     previous_error: Option<&str>,
 ) -> String {
@@ -1488,7 +1702,7 @@ fn build_openclaw_json_only_prompt_with_attempt(
     let nrp = load_nrp_protocol(&ctx.repo_path);
     let research = load_latest_research_context(&ctx.repo_path);
     format!(
-        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
+        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nValidated execution plan (must follow exactly):\n{validated_plan}\n\nPlan summary:\n- target_files: {target_files}\n- target_symbols: {target_symbols}\n- behavior_delta: {behavior_delta}\n- test_delta: {test_delta}\n- commit_subject: {commit_subject}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
         cycle = ctx.cycle,
         attempt = attempt,
         attempt_limit = OPENCLAW_ATTEMPTS_PER_CYCLE,
@@ -1497,6 +1711,12 @@ fn build_openclaw_json_only_prompt_with_attempt(
         line = selected_task.selected_line,
         user_prompt = user_prompt,
         previous_error = previous_error,
+        validated_plan = validated_plan.raw_json,
+        target_files = validated_plan.target_files.join(", "),
+        target_symbols = validated_plan.target_symbols.join(", "),
+        behavior_delta = validated_plan.behavior_delta,
+        test_delta = validated_plan.test_delta,
+        commit_subject = validated_plan.commit_subject,
         snapshot = repo_snapshot,
         research = research,
         nrp = nrp,
@@ -1516,9 +1736,7 @@ fn load_latest_research_context(repo_path: &Path) -> String {
             let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
                 continue;
             };
-            if name.contains("RESEARCH.md")
-                && latest.as_ref().map(|x| p > *x).unwrap_or(true)
-            {
+            if name.contains("RESEARCH.md") && latest.as_ref().map(|x| p > *x).unwrap_or(true) {
                 latest = Some(p);
             }
         }
@@ -2598,13 +2816,48 @@ async fn run_supercycle_planning(
 
     let research_doc = if research_budget_sec > 0 {
         let timeout_sec = research_budget_sec.clamp(30, 600);
-        let session_id = format!("harness-research-{cycle}");
-        match run_openclaw_agent_text_once(repo_path, &research_prompt, &session_id, timeout_sec)
-            .await
+        if std::env::var("EXA_API_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .is_some()
         {
-            Ok(text) if !text.trim().is_empty() => text,
-            Ok(_) => "(research phase returned empty output)".to_string(),
-            Err(err) => format!("(research phase failed: {err})"),
+            match run_exa_research_once(repo_path, &research_prompt, timeout_sec).await {
+                Ok(text) if !text.trim().is_empty() => text,
+                Ok(_) => "(exa research returned empty output)".to_string(),
+                Err(err) => {
+                    let session_id = format!("harness-research-{cycle}");
+                    match run_openclaw_agent_text_once(
+                        repo_path,
+                        &research_prompt,
+                        &session_id,
+                        timeout_sec,
+                    )
+                    .await
+                    {
+                        Ok(text) if !text.trim().is_empty() => {
+                            format!("(exa fallback: {err})\n\n{text}")
+                        }
+                        Ok(_) => format!("(exa failed: {err}; openclaw fallback empty)"),
+                        Err(err2) => {
+                            format!("(research phase failed: exa={err}; openclaw={err2})")
+                        }
+                    }
+                }
+            }
+        } else {
+            let session_id = format!("harness-research-{cycle}");
+            match run_openclaw_agent_text_once(
+                repo_path,
+                &research_prompt,
+                &session_id,
+                timeout_sec,
+            )
+            .await
+            {
+                Ok(text) if !text.trim().is_empty() => text,
+                Ok(_) => "(research phase returned empty output)".to_string(),
+                Err(err) => format!("(research phase failed: {err})"),
+            }
         }
     } else {
         "(research disabled: set --research-budget-sec > 0 to enable)".to_string()
