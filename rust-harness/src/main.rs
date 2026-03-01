@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
@@ -188,6 +190,7 @@ async fn main() -> Result<()> {
     let gen_session = format!("{}-gen-{}", cfg.session_prefix, now);
     let disc_session = format!("{}-disc-{}", cfg.session_prefix, now);
     let deadline = SystemTime::now() + Duration::from_secs((cfg.minutes * 60.0) as u64);
+    let prompt_log_path = repo.join(format!("runs/discriminator-prompts-{}.md", now));
 
     println!("start repo={} goal={}", repo.display(), cfg.goal);
     println!("generator={} discriminator={}", gen_session, disc_session);
@@ -225,6 +228,13 @@ async fn main() -> Result<()> {
             "You are the discriminator. Original human goal: {}\n\nGenerator response:\n{}\n\nReturn strict JSON: {{\"score\":0-100,\"next_prompt\":\"...\",\"commit_now\":true/false}}",
             cfg.goal, gen_out
         );
+
+        if let Some(parent) = prompt_log_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&prompt_log_path) {
+            let _ = writeln!(f, "\n## cycle {}\n\n{}\n", cycle, discriminator_prompt);
+        }
 
         let mut score = 0i64;
         let mut next_prompt = user_prompt.clone();
