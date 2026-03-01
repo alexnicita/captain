@@ -266,6 +266,7 @@ pub struct CycleContext {
     pub repo_path: PathBuf,
     pub user_prompt: Option<String>,
     pub selected_task: Option<FeatureTask>,
+    pub run_session_id: String,
 }
 
 #[async_trait]
@@ -395,6 +396,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 
     let mut progress_memory = load_progress_memory(&progress_path)?;
     let start_epoch = now_unix();
+    let run_session_id = format!("harness-run-{}", start_epoch);
     let gate = RuntimeGate::new(start_epoch, args.duration_sec);
 
     sink.emit(&HarnessEvent::new(kinds::RUN_STARTED).with_data(json!({
@@ -436,8 +438,23 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             "require_commit_each_cycle": args.require_commit_each_cycle,
             "noop_streak_limit": noop_streak_limit,
             "conformance_interval_unchanged": conformance_interval_unchanged,
+            "run_session_id": run_session_id,
         })),
     )?;
+
+    if executor.name() == "openclaw" {
+        let bootstrap_prompt = format!(
+            "Harness run bootstrap. Keep persistent context for this run. User objective: {}",
+            user_prompt.clone().unwrap_or_default()
+        );
+        let _ = run_openclaw_agent_text_once(
+            &repo_path,
+            &bootstrap_prompt,
+            &run_session_id,
+            OPENCLAW_PLAN_TIMEOUT_SEC,
+        )
+        .await;
+    }
 
     let mut cycles_total = 0u64;
     let mut cycles_succeeded = 0u64;
@@ -509,6 +526,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 run_supercycle_planning(
                     &repo_path,
                     cycles_total,
+                    &run_session_id,
                     user_prompt.as_deref(),
                     args.research_budget_sec,
                     args.planning_budget_sec,
@@ -545,6 +563,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             repo_path: repo_path.clone(),
             user_prompt: user_prompt.clone(),
             selected_task: selected_task.clone(),
+            run_session_id: run_session_id.clone(),
         };
 
         if let Some(task) = selected_task.as_ref() {
@@ -1292,11 +1311,10 @@ async fn run_openclaw_codegen_stage(
     let mut last_error: Option<String> = None;
 
     let plan_prompt = build_openclaw_plan_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
-    let plan_session = format!("harness-plan-{}", ctx.cycle);
     let validated_plan = match run_openclaw_agent_text_once(
         &ctx.repo_path,
         &plan_prompt,
-        &plan_session,
+        &ctx.run_session_id,
         OPENCLAW_PLAN_TIMEOUT_SEC,
     )
     .await
@@ -1357,11 +1375,10 @@ async fn run_openclaw_codegen_stage(
 
         let prompt_path =
             write_openclaw_prompt_artifact(&ctx.repo_path, ctx.cycle, attempt, &prompt).ok();
-        let session_id = format!("harness-code-{}-{}", ctx.cycle, attempt);
         let (payload, stderr_text) = match run_openclaw_agent_once(
             &ctx.repo_path,
             &prompt,
-            &session_id,
+            &ctx.run_session_id,
         )
         .await
         {
@@ -2187,6 +2204,7 @@ async fn run_cycle_hooks(
         repo_path: repo_path.to_path_buf(),
         user_prompt: user_prompt.map(ToOwned::to_owned),
         selected_task: selected_task.cloned(),
+        run_session_id: format!("harness-run-hook-{cycle}"),
     };
 
     let mut dirty = repo_dirty(repo_path)
@@ -2682,6 +2700,7 @@ async fn run_commit_watchdog_recovery(
         repo_path: repo_path.to_path_buf(),
         user_prompt: user_prompt.map(ToOwned::to_owned),
         selected_task: selected_task.cloned(),
+        run_session_id: format!("harness-run-watchdog-{cycle}"),
     };
 
     let commit_cmd = format!(
@@ -2818,6 +2837,7 @@ fn emit_git_push_event(
 async fn run_supercycle_planning(
     repo_path: &Path,
     cycle: u64,
+    run_session_id: &str,
     user_prompt: Option<&str>,
     research_budget_sec: u64,
     planning_budget_sec: u64,
@@ -2853,11 +2873,10 @@ async fn run_supercycle_planning(
                 Ok(text) if !text.trim().is_empty() => text,
                 Ok(_) => "(parallel research returned empty output)".to_string(),
                 Err(err) => {
-                    let session_id = format!("harness-research-{cycle}");
                     match run_openclaw_agent_text_once(
                         repo_path,
                         &research_prompt,
-                        &session_id,
+                        run_session_id,
                         timeout_sec,
                     )
                     .await
@@ -2873,11 +2892,10 @@ async fn run_supercycle_planning(
                 }
             }
         } else {
-            let session_id = format!("harness-research-{cycle}");
             match run_openclaw_agent_text_once(
                 repo_path,
                 &research_prompt,
-                &session_id,
+                run_session_id,
                 timeout_sec,
             )
             .await
@@ -4334,6 +4352,7 @@ mod tests {
             repo_path: dir.path().to_path_buf(),
             user_prompt: None,
             selected_task: None,
+            run_session_id: "test-run".to_string(),
         };
         let stage =
             run_stage_commands(WorkStage::Act, &["echo hi".to_string()], &ctx, &policy).await;
