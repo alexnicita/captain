@@ -200,7 +200,7 @@ async fn main() -> Result<()> {
         println!("\n=== cycle {} ===", cycle);
 
         let generator_prompt = format!(
-            "You are the coding generator. Goal: {}\n\nCurrent instruction: {}\n\nWrite/modify code in this repo. Keep edits practical and strong.",
+            "You are the coding generator. Goal: {}\n\nCurrent instruction: {}\n\nIMPORTANT: actually edit files in this repository now. Do not just describe changes. Use your available tools to write real code to disk, then briefly summarize what you changed.",
             cfg.goal, user_prompt
         );
 
