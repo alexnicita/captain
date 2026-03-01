@@ -116,7 +116,11 @@ Environment overrides:
 - scheduler knobs live in TOML (`scheduler.max_concurrent_tasks`, `scheduler.queue_poll_ms`)
 
 ⚠️ Coding mode now runs a provider-backed `plan -> diff -> apply` stage before verify/commit hooks.
-Use a provider that can return unified diffs (`HARNESS_PROVIDER=http` with a working endpoint/model).
+Default "run as-is" settings target Codex 5.3 via OpenAI Responses API:
+- `HARNESS_PROVIDER=http`
+- `HARNESS_PROVIDER_ENDPOINT=https://api.openai.com/v1/responses`
+- `HARNESS_MODEL=gpt-5.3-codex`
+
 `echo` / `http-stub` are useful for scaffolding, but they will not generate meaningful code patches.
 
 ## Dogfood workflow (harness-on-harness)

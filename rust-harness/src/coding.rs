@@ -21,6 +21,7 @@ use tokio::time::{sleep, Duration};
 const OUTPUT_TAIL_LIMIT: usize = 4_000;
 const TASK_SELECTION_COOLDOWN_CYCLES: u64 = 2;
 const TASK_NO_DIFF_ESCALATION_THRESHOLD: u64 = 2;
+const CODEGEN_MAX_ATTEMPTS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -659,19 +660,16 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         if forced_mutation_cycle {
             counters.forced_mutation = counters.forced_mutation.saturating_add(1);
             if !meaningful_diff_this_cycle {
+                progress_memory.source_escalation_count =
+                    progress_memory.source_escalation_count.saturating_add(1);
                 sink.emit(
-                    &HarnessEvent::new(kinds::TASK_FINISHED)
+                    &HarnessEvent::new(kinds::CODING_COUNTER)
                         .with_task_id(cycle_id.clone())
                         .with_data(json!({
-                            "mode": "coding",
-                            "cycle": cycles_total,
-                            "reason": "forced_scoped_task_no_meaningful_diff",
-                            "runtime_ms": cycle_start.elapsed().as_millis() as u64,
+                            "forced_no_diff": true,
+                            "note": "forced scoped task still yielded no meaningful diff; continuing run with escalation"
                         })),
                 )?;
-                return Err(anyhow!(
-                    "forced scoped code-change task produced no meaningful diff; aborting run"
-                ));
             }
         }
 
@@ -947,44 +945,49 @@ async fn run_codegen_stage(
         }
     };
 
-    let task = build_code_task(selected_task, ctx, user_prompt);
+    let base_task = build_code_task(selected_task, ctx, user_prompt);
+    let mut commands = Vec::new();
+    let mut last_error: Option<String> = None;
 
-    match engine
-        .run_cycle(&ctx.repo_path, &task, &repo_snapshot)
-        .await
-    {
-        Ok(report) => {
-            let changed_files = report.diff_applied.changed_files.clone();
-            let success = report.diff_applied.applied && !changed_files.is_empty();
-            let detail = if success {
-                format!(
-                    "code engine applied patch touching {} files",
-                    changed_files.len()
-                )
-            } else {
-                format!(
-                    "code-diff engine produced no applied file changes: {}",
-                    report.diff_applied.detail
-                )
-            };
+    for attempt in 1..=CODEGEN_MAX_ATTEMPTS {
+        let attempt_task = build_codegen_attempt_task(&base_task, attempt, last_error.as_deref());
 
-            let payload = json!({
-                "task_id": report.task_id,
-                "plan_summary": report.planned.summary,
-                "diff_summary": report.diff_generated.summary,
-                "touched_files": report.diff_generated.touched_files,
-                "changed_files": changed_files,
-                "apply_detail": report.diff_applied.detail,
-            });
+        match engine
+            .run_cycle(&ctx.repo_path, &attempt_task, &repo_snapshot)
+            .await
+        {
+            Ok(report) => {
+                let changed_files = report.diff_applied.changed_files.clone();
+                let success = report.diff_applied.applied && !changed_files.is_empty();
+                let detail = if success {
+                    format!(
+                        "code engine applied patch touching {} files",
+                        changed_files.len()
+                    )
+                } else {
+                    format!(
+                        "code-diff engine produced no applied file changes: {}",
+                        report.diff_applied.detail
+                    )
+                };
 
-            StageResult {
-                stage: WorkStage::Act,
-                success,
-                error: if success { None } else { Some(detail.clone()) },
-                commands: vec![CommandExecution {
+                let payload = json!({
+                    "task_id": report.task_id,
+                    "attempt": attempt,
+                    "attempt_limit": CODEGEN_MAX_ATTEMPTS,
+                    "plan_summary": report.planned.summary,
+                    "diff_summary": report.diff_generated.summary,
+                    "touched_files": report.diff_generated.touched_files,
+                    "changed_files": changed_files,
+                    "apply_detail": report.diff_applied.detail,
+                });
+
+                commands.push(CommandExecution {
                     stage: WorkStage::Act,
-                    command: "code-engine plan->diff->apply".to_string(),
-                    argv: vec!["code-engine".to_string(), task.id.clone()],
+                    command: format!(
+                        "code-engine plan->diff->apply (attempt {attempt}/{CODEGEN_MAX_ATTEMPTS})"
+                    ),
+                    argv: vec!["code-engine".to_string(), attempt_task.id.clone()],
                     success,
                     exit_code: Some(if success { 0 } else { 1 }),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -994,29 +997,47 @@ async fn run_codegen_stage(
                     } else {
                         truncate_tail(&detail)
                     },
-                    error: if success { None } else { Some(detail) },
-                }],
+                    error: if success { None } else { Some(detail.clone()) },
+                });
+
+                if success {
+                    return StageResult {
+                        stage: WorkStage::Act,
+                        success: true,
+                        error: None,
+                        commands,
+                    };
+                }
+
+                last_error = Some(detail);
             }
-        }
-        Err(err) => {
-            let message = format!("code-diff engine failed: {err}");
-            StageResult {
-                stage: WorkStage::Act,
-                success: false,
-                error: Some(message.clone()),
-                commands: vec![CommandExecution {
+            Err(err) => {
+                let message = format!("code-diff engine failed: {err}");
+                commands.push(CommandExecution {
                     stage: WorkStage::Act,
-                    command: "code-engine plan->diff->apply".to_string(),
-                    argv: vec!["code-engine".to_string(), task.id],
+                    command: format!(
+                        "code-engine plan->diff->apply (attempt {attempt}/{CODEGEN_MAX_ATTEMPTS})"
+                    ),
+                    argv: vec!["code-engine".to_string(), attempt_task.id],
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
                     stdout_tail: String::new(),
                     stderr_tail: truncate_tail(&message),
-                    error: Some(message),
-                }],
+                    error: Some(message.clone()),
+                });
+                last_error = Some(message);
             }
         }
+    }
+
+    StageResult {
+        stage: WorkStage::Act,
+        success: false,
+        error: Some(
+            last_error.unwrap_or_else(|| "code-diff engine exhausted retry attempts".to_string()),
+        ),
+        commands,
     }
 }
 
@@ -1035,6 +1056,7 @@ fn build_code_task(
         "Produce a valid unified diff patch.".to_string(),
         "Keep edits minimal and aligned to the selected task.".to_string(),
         "Avoid unrelated formatting churn.".to_string(),
+        "Output raw patch text beginning with 'diff --git' (no markdown fences).".to_string(),
     ];
 
     if selected_task.source.ends_with(".md") {
@@ -1055,9 +1077,36 @@ fn build_code_task(
         acceptance_criteria: vec![
             format!("Advance selected task: {}", selected_task.title),
             "Produce a non-empty meaningful git diff.".to_string(),
+            "Patch must apply with `git apply --index` without manual fixes.".to_string(),
             "Keep project checks green after apply.".to_string(),
         ],
     }
+}
+
+fn build_codegen_attempt_task(
+    base_task: &CodeTask,
+    attempt: usize,
+    previous_error: Option<&str>,
+) -> CodeTask {
+    let mut task = base_task.clone();
+    task.id = format!("{}::attempt-{}", base_task.id, attempt);
+
+    if attempt > 1 {
+        task.objective = format!(
+            "{} | retry attempt {} of {}",
+            base_task.objective, attempt, CODEGEN_MAX_ATTEMPTS
+        );
+        task.constraints.push(
+            "Repair prior invalid diff output; ensure strict unified diff syntax and valid hunks."
+                .to_string(),
+        );
+        if let Some(err) = previous_error {
+            task.constraints
+                .push(format!("Previous attempt failed with: {err}"));
+        }
+    }
+
+    task
 }
 
 fn infer_target_files(task: &FeatureTask) -> Vec<String> {
@@ -1827,10 +1876,10 @@ fn rank_task_candidates(
     escalate_source: bool,
 ) -> Vec<RankedTaskCandidate> {
     let doc_tasks = collect_doc_tasks(repo_path, escalate_source);
-    let has_doc_tasks = !doc_tasks.is_empty();
 
     let mut tasks = doc_tasks;
     tasks.extend(internal_fallback_tasks());
+    let has_code_tasks = tasks.iter().any(|task| task.source.starts_with("src/"));
 
     let mut ranked = Vec::new();
     for task in tasks {
@@ -1856,13 +1905,20 @@ fn rank_task_candidates(
         let novelty = task_novelty_score(&task, progress, &history);
         let cooldown_penalty = (cooldown_remaining as i64) * 120;
         let repeat_penalty = (history.selected_count as i64) * 18;
-        let fallback_penalty =
-            if has_doc_tasks && task.id.starts_with("fallback::") && !escalate_source {
-                260
-            } else {
-                0
-            };
-        let score = impact * 100 + novelty - cooldown_penalty - repeat_penalty - fallback_penalty;
+        let fallback_bonus = if task.id.starts_with("fallback::") {
+            160
+        } else {
+            0
+        };
+        let docs_penalty = if has_code_tasks && task.source.ends_with(".md") && !escalate_source {
+            320
+        } else {
+            0
+        };
+        let score = impact * 100 + novelty + fallback_bonus
+            - cooldown_penalty
+            - repeat_penalty
+            - docs_penalty;
 
         ranked.push(RankedTaskCandidate {
             task,

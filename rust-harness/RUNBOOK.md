@@ -31,6 +31,7 @@ cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h
 
 Coding mode expects a provider capable of unified diff generation.
 For real code output, use `provider.kind = "http"` (or `HARNESS_PROVIDER=http`) with a reachable endpoint/model.
+Default target is Codex 5.3 via Responses API (`https://api.openai.com/v1/responses`, model `gpt-5.3-codex`).
 
 Optional prompt input (empty by default unless supplied):
 

@@ -85,7 +85,7 @@ impl HttpProvider {
         let endpoint = cfg
             .endpoint
             .clone()
-            .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
+            .unwrap_or_else(|| "https://api.openai.com/v1/responses".to_string());
 
         let endpoint_url = reqwest::Url::parse(&endpoint)
             .with_context(|| format!("invalid provider endpoint URL: {endpoint}"))?;
@@ -105,7 +105,11 @@ impl HttpProvider {
         })
     }
 
-    fn build_messages(&self, req: &ProviderRequest) -> Vec<Value> {
+    fn system_instruction(&self) -> &'static str {
+        "You are a general-purpose task orchestrator. Return concise progress and optional tool usage."
+    }
+
+    fn build_user_content(&self, req: &ProviderRequest) -> String {
         let mut user_content = format!("Objective: {}", req.objective);
         if !req.context.is_empty() {
             user_content.push_str("\n\nContext:\n");
@@ -119,15 +123,57 @@ impl HttpProvider {
             user_content.push_str("\nAvailable tools: ");
             user_content.push_str(&req.available_tools.join(", "));
         }
+        user_content
+    }
 
+    fn endpoint_explicitly_responses(&self) -> bool {
+        self.endpoint.contains("/v1/responses") || self.endpoint.ends_with("/responses")
+    }
+
+    fn model_prefers_responses_api(&self) -> bool {
+        self.model.to_lowercase().contains("codex")
+    }
+
+    fn uses_responses_api(&self) -> bool {
+        self.endpoint_explicitly_responses() || self.model_prefers_responses_api()
+    }
+
+    fn request_endpoint(&self) -> String {
+        if self.endpoint_explicitly_responses() || !self.model_prefers_responses_api() {
+            return self.endpoint.clone();
+        }
+
+        if self.endpoint.contains("/v1/chat/completions") {
+            return self
+                .endpoint
+                .replace("/v1/chat/completions", "/v1/responses");
+        }
+
+        self.endpoint.clone()
+    }
+
+    fn build_chat_messages(&self, req: &ProviderRequest) -> Vec<Value> {
         vec![
             serde_json::json!({
                 "role": "system",
-                "content": "You are a general-purpose task orchestrator. Return concise progress and optional tool usage."
+                "content": self.system_instruction()
             }),
             serde_json::json!({
                 "role": "user",
-                "content": user_content
+                "content": self.build_user_content(req)
+            }),
+        ]
+    }
+
+    fn build_responses_input(&self, req: &ProviderRequest) -> Vec<Value> {
+        vec![
+            serde_json::json!({
+                "role": "system",
+                "content": [{"type": "input_text", "text": self.system_instruction()}]
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": [{"type": "input_text", "text": self.build_user_content(req)}]
             }),
         ]
     }
@@ -198,13 +244,23 @@ impl Provider for HttpProvider {
     }
 
     async fn generate(&self, req: &ProviderRequest) -> Result<ProviderResponse> {
-        let payload = serde_json::json!({
-            "model": self.model.clone(),
-            "messages": self.build_messages(req),
-            "temperature": 0.2,
-        });
+        let use_responses_api = self.uses_responses_api();
+        let endpoint = self.request_endpoint();
 
-        let mut request = self.client.post(&self.endpoint).json(&payload);
+        let payload = if use_responses_api {
+            serde_json::json!({
+                "model": self.model.clone(),
+                "input": self.build_responses_input(req),
+            })
+        } else {
+            serde_json::json!({
+                "model": self.model.clone(),
+                "messages": self.build_chat_messages(req),
+                "temperature": 0.2,
+            })
+        };
+
+        let mut request = self.client.post(&endpoint).json(&payload);
         if let Some(key) = &self.api_key {
             request = request.bearer_auth(key);
         }
@@ -212,7 +268,7 @@ impl Provider for HttpProvider {
         let response = request
             .send()
             .await
-            .with_context(|| format!("provider request failed endpoint={}", self.endpoint))?;
+            .with_context(|| format!("provider request failed endpoint={endpoint}"))?;
 
         let status = response.status();
         let body: Value = response
@@ -227,32 +283,11 @@ impl Provider for HttpProvider {
             ));
         }
 
-        let message = body
-            .pointer("/choices/0/message/content")
-            .and_then(Value::as_str)
-            .unwrap_or("(empty provider content)")
-            .to_string();
-
-        let mut tool_calls = Vec::new();
-        if let Some(calls) = body
-            .pointer("/choices/0/message/tool_calls")
-            .and_then(Value::as_array)
-        {
-            for call in calls {
-                if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
-                    let args = call
-                        .pointer("/function/arguments")
-                        .and_then(Value::as_str)
-                        .unwrap_or("{}");
-                    let input_json: Value =
-                        serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
-                    tool_calls.push(PlannedToolCall {
-                        tool_name: name.to_string(),
-                        input_json,
-                    });
-                }
-            }
-        }
+        let (message, tool_calls) = if use_responses_api {
+            parse_responses_payload(&body)
+        } else {
+            parse_chat_payload(&body)
+        };
 
         Ok(ProviderResponse {
             message,
@@ -261,6 +296,89 @@ impl Provider for HttpProvider {
             raw: Some(body),
         })
     }
+}
+
+fn parse_chat_payload(body: &Value) -> (String, Vec<PlannedToolCall>) {
+    let message = body
+        .pointer("/choices/0/message/content")
+        .and_then(Value::as_str)
+        .unwrap_or("(empty provider content)")
+        .to_string();
+
+    let mut tool_calls = Vec::new();
+    if let Some(calls) = body
+        .pointer("/choices/0/message/tool_calls")
+        .and_then(Value::as_array)
+    {
+        for call in calls {
+            if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
+                let args = call
+                    .pointer("/function/arguments")
+                    .and_then(Value::as_str)
+                    .unwrap_or("{}");
+                let input_json: Value =
+                    serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
+                tool_calls.push(PlannedToolCall {
+                    tool_name: name.to_string(),
+                    input_json,
+                });
+            }
+        }
+    }
+
+    (message, tool_calls)
+}
+
+fn parse_responses_payload(body: &Value) -> (String, Vec<PlannedToolCall>) {
+    let mut tool_calls = Vec::new();
+    let mut message_chunks: Vec<String> = Vec::new();
+
+    if let Some(outputs) = body.pointer("/output").and_then(Value::as_array) {
+        for item in outputs {
+            match item.get("type").and_then(Value::as_str).unwrap_or_default() {
+                "message" => {
+                    if let Some(content) = item.get("content").and_then(Value::as_array) {
+                        for entry in content {
+                            let entry_type = entry
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default();
+                            if matches!(entry_type, "output_text" | "text") {
+                                if let Some(text) = entry.get("text").and_then(Value::as_str) {
+                                    let trimmed = text.trim();
+                                    if !trimmed.is_empty() {
+                                        message_chunks.push(trimmed.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                "function_call" => {
+                    if let Some(name) = item.get("name").and_then(Value::as_str) {
+                        let input_json = item
+                            .get("arguments")
+                            .and_then(Value::as_str)
+                            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+                            .unwrap_or_else(|| serde_json::json!({}));
+                        tool_calls.push(PlannedToolCall {
+                            tool_name: name.to_string(),
+                            input_json,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let message = if message_chunks.is_empty() {
+        "(empty provider content)".to_string()
+    } else {
+        message_chunks.join("\n")
+    };
+
+    (message, tool_calls)
 }
 
 pub struct HttpProviderStub {
@@ -306,9 +424,10 @@ pub fn build_provider(cfg: &ProviderConfig) -> BuiltProvider {
             },
             Err(err) => BuiltProvider {
                 provider: Box::new(HttpProviderStub {
-                    endpoint: cfg.endpoint.clone().unwrap_or_else(|| {
-                        "https://api.openai.com/v1/chat/completions".to_string()
-                    }),
+                    endpoint: cfg
+                        .endpoint
+                        .clone()
+                        .unwrap_or_else(|| "https://api.openai.com/v1/responses".to_string()),
                     model: cfg.model.clone(),
                 }),
                 requested_kind: requested,
@@ -321,7 +440,7 @@ pub fn build_provider(cfg: &ProviderConfig) -> BuiltProvider {
                 endpoint: cfg
                     .endpoint
                     .clone()
-                    .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string()),
+                    .unwrap_or_else(|| "https://api.openai.com/v1/responses".to_string()),
                 model: cfg.model.clone(),
             }),
             requested_kind: requested,

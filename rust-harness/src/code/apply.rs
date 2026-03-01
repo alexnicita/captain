@@ -34,11 +34,27 @@ impl CodeDiffApplier for GitApplyDiffApplier {
             .await?;
 
         if !apply.status.success() {
-            return Ok(CodeApplyResult {
-                applied: false,
-                changed_files: Vec::new(),
-                detail: String::from_utf8_lossy(&apply.stderr).trim().to_string(),
-            });
+            let first_err = String::from_utf8_lossy(&apply.stderr).trim().to_string();
+
+            // Retry with --recount to recover from occasional hunk-header drift.
+            let retry = Command::new("git")
+                .arg("apply")
+                .arg("--index")
+                .arg("--recount")
+                .arg("--whitespace=nowarn")
+                .arg(&patch_path)
+                .current_dir(repo_path)
+                .output()
+                .await?;
+
+            if !retry.status.success() {
+                let retry_err = String::from_utf8_lossy(&retry.stderr).trim().to_string();
+                return Ok(CodeApplyResult {
+                    applied: false,
+                    changed_files: Vec::new(),
+                    detail: format!("{first_err}; retry(--recount)={retry_err}"),
+                });
+            }
         }
 
         let changed = Command::new("git")

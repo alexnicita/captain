@@ -115,8 +115,8 @@ fi
 #   2) sane OpenAI defaults
 #   3) OPENAI_API_KEY loaded from OpenClaw auth profile store when available
 export HARNESS_PROVIDER="${HARNESS_PROVIDER:-http}"
-export HARNESS_PROVIDER_ENDPOINT="${HARNESS_PROVIDER_ENDPOINT:-https://api.openai.com/v1/chat/completions}"
-export HARNESS_MODEL="${HARNESS_MODEL:-gpt-4.1}"
+export HARNESS_PROVIDER_ENDPOINT="${HARNESS_PROVIDER_ENDPOINT:-https://api.openai.com/v1/responses}"
+export HARNESS_MODEL="${HARNESS_MODEL:-gpt-5.3-codex}"
 
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   AUTH_PROFILES_PATH="${OPENCLAW_AUTH_PROFILES:-$HOME/.openclaw/agents/main/agent/auth-profiles.json}"

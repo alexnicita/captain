@@ -55,18 +55,39 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
 }
 
 fn extract_diff(message: &str) -> Option<String> {
-    if let Some(start) = message.find("```diff") {
-        let rest = &message[start + 7..];
+    let trimmed = message.trim();
+    if trimmed.eq_ignore_ascii_case("NO_VALID_PATCH") {
+        return None;
+    }
+
+    if let Some(start) = trimmed.find("```diff") {
+        let rest = &trimmed[start + 7..];
         if let Some(end) = rest.find("```") {
-            return Some(rest[..end].trim().to_string());
+            return sanitize_unified_diff(&rest[..end]);
         }
     }
 
-    if message.contains("diff --git") {
-        return Some(message.trim().to_string());
+    if let Some(start) = trimmed.find("diff --git") {
+        return sanitize_unified_diff(&trimmed[start..]);
     }
 
     None
+}
+
+fn sanitize_unified_diff(raw: &str) -> Option<String> {
+    let mut lines = raw.lines().map(str::trim_end).collect::<Vec<_>>();
+
+    let first_diff = lines
+        .iter()
+        .position(|line| line.starts_with("diff --git "))?;
+    let mut normalized = lines.split_off(first_diff);
+
+    while matches!(normalized.last(), Some(last) if last.trim().is_empty() || last.trim() == "```")
+    {
+        normalized.pop();
+    }
+
+    Some(normalized.join("\n"))
 }
 
 fn extract_touched_files(diff: &str) -> Vec<String> {
