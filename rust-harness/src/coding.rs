@@ -1386,7 +1386,7 @@ async fn run_openclaw_agent_once(
         .arg("--timeout")
         .arg("600")
         .arg("--thinking")
-        .arg("high")
+        .arg("low")
         .arg("--json")
         .arg("--message")
         .arg(prompt)
