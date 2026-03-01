@@ -33,6 +33,17 @@ Coding mode expects a provider capable of unified diff generation.
 For real code output, use `provider.kind = "http"` (or `HARNESS_PROVIDER=http`) with a reachable endpoint/model.
 Default target is Codex 5.3 via Responses API (`https://api.openai.com/v1/responses`, model `gpt-5.3-codex`).
 
+## 4b) Supercycle run (architecture remap + task graph artifacts)
+
+```bash
+cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 20m --supercycle
+```
+
+Supercycle writes planning artifacts under `.harness/supercycle/` per cycle:
+- `cycle-*-ARCH_REMAP.md`
+- `cycle-*-TASK_GRAPH.md`
+- `cycle-*-TASK_PACK.md`
+
 Optional prompt input (empty by default unless supplied):
 
 ```bash
@@ -54,6 +65,14 @@ Useful flags:
 --conformance-interval-unchanged 3
 --progress-file ./.harness/coding-progress.json
 --run-lock-file ./.git/.agent-harness-code.lock
+```
+
+Live monitoring:
+
+```bash
+./scripts/events-pretty.sh ./runs/events.jsonl --format emoji
+
+tail -F ./runs/console.log ./runs/runtime.log
 ```
 
 Coding mode guarantees the phase order each cycle:
@@ -113,5 +132,8 @@ cargo run -- run --objective "debug" --deny-tool echo
 - **excess retries**: lower `provider.max_retries` or validate endpoint/auth
 - **empty replay**: confirm `event_log_path` and file permissions
 - **`coding.lock.exists`**: another coding run already owns the lock; stop it first (or remove stale lock if process is gone).
+- **`corrupt patch at line ...`**: malformed provider diff output; inspect `.harness/tmp/llm-patch-*.diff` and retry with supercycle/openclaw JSON-edit path.
+- **dirty-tree spin** (`repo has pending changes; continue current feature thread`): stop run, clean/reset tree, rerun from clean state.
 - **forced no-diff abort**: your act phase is not producing meaningful scoped changes; tighten `--act-cmd` and validate with `git diff --stat`.
 - **commit subject rejected by quality gate**: subject was generic or lacked changed-file scope; inspect staged names and commit event payload (`subject`, `detail`).
+- **`chore(harness): watchdog keepalive cycle N`**: liveness keepalive commit after commit drought (allow-empty); indicates recovery path, not feature completion.

@@ -196,6 +196,7 @@ agent-harness code --repo /path/to/repo --time 20m --supercycle \
 - Commit subjects are strict conventional commits (`feat|fix|docs|test|refactor|chore`) with file-scoped subjects; generic templates (including variants of `build a generalizable ...` / `harness: coding cycle`) are hard-rejected.
 - Subject generation is deterministic from staged files, must reference changed scope, and still passes through short-window de-duplication.
 - Hard anti-noop defaults: `noop_streak_limit=3` triggers a forced concrete scoped code-change task; if that forced cycle still has no meaningful diff, the run aborts explicitly.
+- Commit watchdog (10 minutes without successful commit) now attempts a keepalive recovery commit (`--allow-empty`) and optional push when enabled, then continues the run.
 - Single-instance lock per repo prevents parallel coding loops (`.git/.agent-harness-code.lock`) and fail-fast exits with `coding.lock.exists` (`fail_fast=true`) plus `coding.lock.acquired` on success.
 - Task progression memory persists completed/attempted ids plus per-task selection history (`.harness/coding-progress.json`) so architecture ranking uses novelty + impact with cooldown to avoid repetitive picks.
 - Explicit cycle counters are emitted: `noop_streak`, `forced_mutation`, `task_advanced`, `source_escalation`.
@@ -233,8 +234,11 @@ It outputs cycle/act/commit metrics and a simple `quality_score_100` so regressi
 ## Troubleshooting quick hits (coding mode)
 
 - `coding.lock.exists`: another run already owns the repo lock. Stop the active run or remove stale lock file if the process is gone.
+- repeated `corrupt patch at line ...`: provider emitted malformed unified diff hunks; inspect `.harness/tmp/llm-patch-*.diff` and prefer supercycle/openclaw JSON-edit path for recovery.
+- repeated `repo has pending changes; continue current feature thread` + verify failures: run likely entered dirty-tree spin; stop run, clean/reset working tree, then restart.
 - `forced scoped code-change task produced no meaningful diff`: your act stage is not producing real scoped changes. Update `--act-cmd` to perform concrete edits.
 - `commit subject rejected by quality gate`: generated subject was generic or did not mention changed scope. Check staged files and subject generation inputs.
+- `chore(harness): watchdog keepalive cycle N`: watchdog recovery keepalive commit (allow-empty) fired after commit drought; treat as liveness marker, not feature delivery.
 - repeated `git.push` blocked/failure: inspect remote auth/upstream tracking; push events now include explicit result + detail fields.
 
 ## Extensibility points
