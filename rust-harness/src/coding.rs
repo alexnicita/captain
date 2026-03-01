@@ -1123,25 +1123,29 @@ async fn run_openclaw_codegen_stage(
             last_error.as_deref(),
         );
 
-        let (payload, stderr_text) = match run_openclaw_agent_once(&ctx.repo_path, &prompt).await {
-            Ok(result) => result,
-            Err(err) => {
-                let message = err.to_string();
-                last_error = Some(message.clone());
-                attempts.push(CommandExecution {
-                    stage: WorkStage::Act,
-                    command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
-                    argv: vec!["openclaw".to_string(), "agent".to_string()],
-                    success: false,
-                    exit_code: Some(1),
-                    duration_ms: stage_start.elapsed().as_millis() as u64,
-                    stdout_tail: String::new(),
-                    stderr_tail: truncate_tail(&message),
-                    error: Some(message),
-                });
-                continue;
-            }
-        };
+        let session_id = format!("harness-code-{}-{}", ctx.cycle, attempt);
+        let (payload, stderr_text) =
+            match run_openclaw_agent_once(&ctx.repo_path, &prompt, &session_id).await {
+                Ok(result) => result,
+                Err(err) => {
+                    let message = err.to_string();
+                    last_error = Some(message.clone());
+                    attempts.push(CommandExecution {
+                        stage: WorkStage::Act,
+                        command: format!(
+                            "openclaw agent --local --agent main (attempt {attempt}/3)"
+                        ),
+                        argv: vec!["openclaw".to_string(), "agent".to_string()],
+                        success: false,
+                        exit_code: Some(1),
+                        duration_ms: stage_start.elapsed().as_millis() as u64,
+                        stdout_tail: String::new(),
+                        stderr_tail: truncate_tail(&message),
+                        error: Some(message),
+                    });
+                    continue;
+                }
+            };
 
         let proposal = match extract_json_edits_payload(&payload).map(|(paths, sentinel)| {
             CodeDiffProposal {
@@ -1247,12 +1251,18 @@ async fn run_openclaw_codegen_stage(
     }
 }
 
-async fn run_openclaw_agent_once(repo_path: &Path, prompt: &str) -> Result<(String, String)> {
+async fn run_openclaw_agent_once(
+    repo_path: &Path,
+    prompt: &str,
+    session_id: &str,
+) -> Result<(String, String)> {
     let output = Command::new("openclaw")
         .arg("agent")
         .arg("--local")
         .arg("--agent")
         .arg("main")
+        .arg("--session-id")
+        .arg(session_id)
         .arg("--timeout")
         .arg("240")
         .arg("--json")
