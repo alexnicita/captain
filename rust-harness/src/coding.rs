@@ -23,6 +23,7 @@ const OUTPUT_TAIL_LIMIT: usize = 4_000;
 const TASK_SELECTION_COOLDOWN_CYCLES: u64 = 2;
 const TASK_NO_DIFF_ESCALATION_THRESHOLD: u64 = 2;
 const CODEGEN_MAX_ATTEMPTS: usize = 3;
+const OPENCLAW_ATTEMPTS_PER_CYCLE: usize = 1;
 const COMMIT_WATCHDOG_SEC: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1233,7 +1234,7 @@ async fn run_openclaw_codegen_stage(
     let mut attempts = Vec::new();
     let mut last_error: Option<String> = None;
 
-    for attempt in 1..=3 {
+    for attempt in 1..=OPENCLAW_ATTEMPTS_PER_CYCLE {
         let prompt = build_openclaw_json_only_prompt_with_attempt(
             ctx,
             selected_task,
@@ -1243,17 +1244,24 @@ async fn run_openclaw_codegen_stage(
             last_error.as_deref(),
         );
 
+        let prompt_path =
+            write_openclaw_prompt_artifact(&ctx.repo_path, ctx.cycle, attempt, &prompt).ok();
         let session_id = format!("harness-code-{}-{}", ctx.cycle, attempt);
-        let (payload, stderr_text) =
-            match run_openclaw_agent_once(&ctx.repo_path, &prompt, &session_id).await {
-                Ok(result) => result,
-                Err(err) => {
-                    let message = err.to_string();
-                    last_error = Some(message.clone());
-                    attempts.push(CommandExecution {
+        let (payload, stderr_text) = match run_openclaw_agent_once(
+            &ctx.repo_path,
+            &prompt,
+            &session_id,
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                let message = err.to_string();
+                last_error = Some(message.clone());
+                attempts.push(CommandExecution {
                         stage: WorkStage::Act,
                         command: format!(
-                            "openclaw agent --local --agent main (attempt {attempt}/3)"
+                            "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
                         ),
                         argv: vec!["openclaw".to_string(), "agent".to_string()],
                         success: false,
@@ -1263,9 +1271,9 @@ async fn run_openclaw_codegen_stage(
                         stderr_tail: truncate_tail(&message),
                         error: Some(message),
                     });
-                    continue;
-                }
-            };
+                continue;
+            }
+        };
 
         let proposal = match extract_json_edits_payload(&payload).map(|(paths, sentinel)| {
             CodeDiffProposal {
@@ -1281,12 +1289,20 @@ async fn run_openclaw_codegen_stage(
                 last_error = Some(message.clone());
                 attempts.push(CommandExecution {
                     stage: WorkStage::Act,
-                    command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
+                    command: format!(
+                        "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
+                    ),
                     argv: vec!["openclaw".to_string(), "agent".to_string()],
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
-                    stdout_tail: truncate_tail(&payload),
+                    stdout_tail: truncate_tail(
+                        &json!({
+                            "prompt_path": prompt_path,
+                            "payload_preview": payload,
+                        })
+                        .to_string(),
+                    ),
                     stderr_tail: truncate_tail(&stderr_text),
                     error: Some(message),
                 });
@@ -1301,12 +1317,20 @@ async fn run_openclaw_codegen_stage(
                 last_error = Some(message.clone());
                 attempts.push(CommandExecution {
                     stage: WorkStage::Act,
-                    command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
+                    command: format!(
+                        "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
+                    ),
                     argv: vec!["openclaw".to_string(), "agent".to_string()],
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
-                    stdout_tail: truncate_tail(&payload),
+                    stdout_tail: truncate_tail(
+                        &json!({
+                            "prompt_path": prompt_path,
+                            "payload_preview": payload,
+                        })
+                        .to_string(),
+                    ),
                     stderr_tail: truncate_tail(&message),
                     error: Some(message),
                 });
@@ -1329,13 +1353,16 @@ async fn run_openclaw_codegen_stage(
 
         attempts.push(CommandExecution {
             stage: WorkStage::Act,
-            command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
+            command: format!(
+                "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
+            ),
             argv: vec!["openclaw".to_string(), "agent".to_string()],
             success,
             exit_code: Some(if success { 0 } else { 1 }),
             duration_ms: stage_start.elapsed().as_millis() as u64,
             stdout_tail: truncate_tail(
                 &json!({
+                    "prompt_path": prompt_path,
                     "changed_files": apply.changed_files,
                     "apply_detail": apply.detail,
                 })
@@ -1421,9 +1448,10 @@ fn build_openclaw_json_only_prompt_with_attempt(
     let previous_error = previous_error.unwrap_or("");
     let nrp = load_nrp_protocol(&ctx.repo_path);
     format!(
-        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/3\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
+        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
         cycle = ctx.cycle,
         attempt = attempt,
+        attempt_limit = OPENCLAW_ATTEMPTS_PER_CYCLE,
         task = selected_task.title,
         source = selected_task.source,
         line = selected_task.selected_line,
@@ -1432,6 +1460,19 @@ fn build_openclaw_json_only_prompt_with_attempt(
         snapshot = repo_snapshot,
         nrp = nrp,
     )
+}
+
+fn write_openclaw_prompt_artifact(
+    repo_path: &Path,
+    cycle: u64,
+    attempt: usize,
+    prompt: &str,
+) -> Result<String> {
+    let dir = repo_path.join(".harness/supercycle/prompts");
+    fs::create_dir_all(&dir).context("failed to create openclaw prompt artifact dir")?;
+    let path = dir.join(format!("cycle-{cycle:04}-attempt-{attempt}.prompt.txt"));
+    fs::write(&path, prompt).context("failed to write openclaw prompt artifact")?;
+    Ok(path.display().to_string())
 }
 
 fn load_nrp_protocol(repo_path: &Path) -> String {
@@ -2992,6 +3033,7 @@ fn slugify_task_line(line: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_phase_event(
     sink: &EventSink,
     runtime_log_path: Option<&Path>,

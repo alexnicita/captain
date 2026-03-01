@@ -6,13 +6,39 @@ cd "$ROOT_DIR"
 
 DURATION="${1:-1h}"
 PROMPT="${HARNESS_PROMPT:-Implement concrete Rust code changes in src/ with tests; avoid docs-only edits. Keep commits specific and useful.}"
+RECOVER_DIRTY="${HARNESS_RECOVER_DIRTY:-0}"
 
-# Clean stale harness runtime artifacts so start can run from a clean git tree.
-rm -f .git/.agent-harness-code.lock
-rm -rf .harness/supercycle
+cleanup_runtime_artifacts() {
+  rm -f .git/.agent-harness-code.lock
+  rm -rf .harness/supercycle
+}
+
+stop_active_runs() {
+  pkill -f "scripts/harness\.sh|agent-harness.* code|target/debug/agent-harness.* code" >/dev/null 2>&1 || true
+}
+
+recover_dirty_tree_if_enabled() {
+  if [[ "$RECOVER_DIRTY" != "1" ]]; then
+    return 0
+  fi
+
+  echo "[start] HARNESS_RECOVER_DIRTY=1 set; attempting dirty-tree recovery"
+  stop_active_runs
+  cleanup_runtime_artifacts
+
+  # Reset tracked files to avoid dirty-tree spin from failed cycles.
+  git reset --hard HEAD >/dev/null 2>&1 || true
+
+  # Remove only harness-generated untracked dirs; keep user-owned files.
+  rm -rf .harness/supercycle runs
+}
+
+recover_dirty_tree_if_enabled
+cleanup_runtime_artifacts
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "[start] repo is dirty. Commit/stash first, then rerun ./start.sh" >&2
+  echo "[start] tip: export HARNESS_RECOVER_DIRTY=1 for auto-recovery reset" >&2
   git status --short
   exit 2
 fi
