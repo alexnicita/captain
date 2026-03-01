@@ -1856,7 +1856,7 @@ async fn run_cycle_hooks(
         return Ok(hooks);
     }
 
-    let add_result = execute_command_line(WorkStage::Act, "git add -A", &hook_ctx, policy).await;
+    let add_result = execute_command_line(WorkStage::Act, "git add -A .", &hook_ctx, policy).await;
     if !add_result.success {
         let detail = format!("git add failed: {}", summarize_error(&add_result));
         hooks.push(HookResult {
