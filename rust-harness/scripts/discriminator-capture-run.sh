@@ -79,6 +79,8 @@ RUNTIME_STDOUT="$RUN_CAPTURE_DIR/console.log"
 START_EPOCH="$(date -u +%s)"
 PROMPT_HASH="$(printf "%s" "$PROMPT" | sha256sum | awk '{print $1}')"
 DURATION_SECONDS_ESTIMATE="$(estimate_duration_seconds "$DURATION")"
+GIT_BRANCH="$(git branch --show-current 2>/dev/null || echo unknown)"
+GIT_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 cat > "$META_FILE" <<EOF
 {
   "run_ts": "$RUN_TS",
@@ -86,6 +88,8 @@ cat > "$META_FILE" <<EOF
   "duration_seconds_estimate": $DURATION_SECONDS_ESTIMATE,
   "prompt": "${PROMPT//"/\"}",
   "prompt_hash": "$PROMPT_HASH",
+  "git_branch": "$GIT_BRANCH",
+  "git_head": "$GIT_HEAD",
   "start_epoch": $START_EPOCH,
   "start_iso": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "dry_run": $DRY_RUN,
