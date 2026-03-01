@@ -38,6 +38,10 @@ pub struct CodingRunArgs {
     pub duration_sec: u64,
     pub heartbeat_sec: u64,
     pub cycle_pause_sec: u64,
+    pub supercycle: bool,
+    pub research_budget_sec: u64,
+    pub planning_budget_sec: u64,
+    pub require_commit_each_cycle: bool,
     pub preset: ExecutorPreset,
     pub plan_cmd: Vec<String>,
     pub act_cmd: Vec<String>,
@@ -379,6 +383,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         "deadline_epoch": gate.deadline_epoch(),
         "prompt_provided": user_prompt.is_some(),
         "user_prompt": user_prompt.clone(),
+        "supercycle": args.supercycle,
+        "research_budget_sec": args.research_budget_sec,
+        "planning_budget_sec": args.planning_budget_sec,
+        "require_commit_each_cycle": args.require_commit_each_cycle,
         "noop_streak_limit": noop_streak_limit,
         "conformance_interval_unchanged": conformance_interval_unchanged,
         "progress_file": progress_path.display().to_string(),
@@ -396,6 +404,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             "deadline_epoch": gate.deadline_epoch(),
             "prompt_provided": user_prompt.is_some(),
             "user_prompt": user_prompt.clone(),
+            "supercycle": args.supercycle,
+            "research_budget_sec": args.research_budget_sec,
+            "planning_budget_sec": args.planning_budget_sec,
+            "require_commit_each_cycle": args.require_commit_each_cycle,
             "noop_streak_limit": noop_streak_limit,
             "conformance_interval_unchanged": conformance_interval_unchanged,
         })),
@@ -454,6 +466,17 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         )?;
 
         let mut phase_results = Vec::new();
+
+        if args.supercycle {
+            run_supercycle_planning(
+                &repo_path,
+                cycles_total,
+                user_prompt.as_deref(),
+                args.research_budget_sec,
+                args.planning_budget_sec,
+            )
+            .await?;
+        }
 
         let forced_mutation_cycle = noop_streak >= noop_streak_limit;
         let escalate_source =
@@ -734,11 +757,18 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 .with_data(serde_json::to_value(&counters)?),
         )?;
 
+        let commit_executed_ok = hook_results
+            .iter()
+            .find(|hook| hook.name == "commit")
+            .map(|hook| hook.success && !hook.skipped)
+            .unwrap_or(false);
+
         let cycle_success = phase_results.iter().all(|phase| phase.success)
             && plan_result.success
             && act_result.success
             && verify_result.success
-            && hook_results.iter().all(|hook| hook.success || hook.skipped);
+            && hook_results.iter().all(|hook| hook.success || hook.skipped)
+            && (!args.require_commit_each_cycle || commit_executed_ok);
         if cycle_success {
             cycles_succeeded += 1;
         } else {
@@ -2205,6 +2235,76 @@ fn emit_git_push_event(
     )
 }
 
+async fn run_supercycle_planning(
+    repo_path: &Path,
+    cycle: u64,
+    user_prompt: Option<&str>,
+    research_budget_sec: u64,
+    planning_budget_sec: u64,
+) -> Result<()> {
+    let planning_dir = repo_path.join(".harness/supercycle");
+    fs::create_dir_all(&planning_dir)?;
+
+    let mut src_files = Vec::new();
+    collect_src_files(repo_path.join("src"), &mut src_files)?;
+    src_files.sort();
+
+    let architecture = planning_dir.join(format!("cycle-{}-ARCH_REMAP.md", cycle));
+    let task_graph = planning_dir.join(format!("cycle-{}-TASK_GRAPH.md", cycle));
+    let task_pack = planning_dir.join(format!("cycle-{}-TASK_PACK.md", cycle));
+
+    let prompt = user_prompt.unwrap_or("");
+    fs::write(
+        &architecture,
+        format!(
+            "# ARCH_REMAP cycle {cycle}\n\n## Goal\n{prompt}\n\n## Subsystems\n- runtime loop + phase state machine\n- task synthesis + ranking\n- openclaw execution adapter\n- quality + commit rubric\n\n## Candidate remaps\n1. Extract supercycle planner from coding.rs into dedicated module\n2. Introduce strict one-cycle gate with rollback\n3. Split quality rubric into reusable engine\n\n## Source index size\n{} files under src/\n",
+            src_files.len()
+        ),
+    )?;
+
+    let mut graph = String::from("# TASK_GRAPH\n\n");
+    graph.push_str("1. architecture remap doc generation\n");
+    graph.push_str("2. generate file/function task pack\n");
+    graph.push_str("3. execute one scoped change + test\n");
+    graph.push_str("4. verify + commit\n");
+    fs::write(&task_graph, graph)?;
+
+    let mut pack = String::from("# TASK_PACK\n\n## Concrete file/function tasks\n");
+    for path in src_files.iter().take(24) {
+        let rel = path.strip_prefix(repo_path).unwrap_or(path);
+        let rel = rel.display().to_string();
+        pack.push_str(&format!(
+            "- [ ] Review `{rel}` and propose one reliability improvement with matching test\n"
+        ));
+    }
+    fs::write(&task_pack, pack)?;
+
+    if research_budget_sec > 0 {
+        sleep(Duration::from_secs(research_budget_sec.min(30))).await;
+    }
+    if planning_budget_sec > 0 {
+        sleep(Duration::from_secs(planning_budget_sec.min(30))).await;
+    }
+
+    Ok(())
+}
+
+fn collect_src_files(dir: PathBuf, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_src_files(path, out)?;
+        } else if path.extension().and_then(|x| x.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 async fn run_architecture_phase(
     repo_path: &Path,
     progress: &TaskProgressMemory,
@@ -3507,6 +3607,10 @@ mod tests {
             duration_sec: 1,
             heartbeat_sec: 1,
             cycle_pause_sec: 0,
+            supercycle: false,
+            research_budget_sec: 0,
+            planning_budget_sec: 0,
+            require_commit_each_cycle: false,
             preset: ExecutorPreset::Shell,
             plan_cmd: vec![],
             act_cmd: vec![],
