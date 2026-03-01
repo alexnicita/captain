@@ -592,7 +592,7 @@ async fn prepare_start_workspace(repo: &str) -> Result<()> {
     let _ = Command::new("pkill")
         .args([
             "-f",
-            "scripts/harness\\.sh|agent-harness.* code|target/debug/agent-harness.* code",
+            "scripts/harness\\.sh|agent-harness( --config [^ ]+)? code --repo|target/debug/agent-harness( --config [^ ]+)? code --repo",
         ])
         .output()
         .await;
