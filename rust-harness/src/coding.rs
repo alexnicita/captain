@@ -2994,6 +2994,9 @@ fn commit_has_meaningful_scope(files: &[String], selected_task: Option<&FeatureT
     }
 
     let has_src = files.iter().any(|f| f.starts_with("src/"));
+    let has_tests = files
+        .iter()
+        .any(|f| f.starts_with("tests/") || f.contains("/tests/") || f.contains("_test"));
     let has_docs = files.iter().any(|f| {
         f.ends_with("README.md")
             || f.ends_with("RUNBOOK.md")
@@ -3002,6 +3005,13 @@ fn commit_has_meaningful_scope(files: &[String], selected_task: Option<&FeatureT
     });
 
     if has_src {
+        return true;
+    }
+
+    if has_tests {
+        if let Some(task) = selected_task {
+            return task.source.starts_with("src/");
+        }
         return true;
     }
 
