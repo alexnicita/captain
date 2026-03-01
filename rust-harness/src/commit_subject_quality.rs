@@ -18,6 +18,15 @@ pub fn normalize_scope_token(input: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+fn normalize_file_stem_scope(path: &str) -> String {
+    let stem = path
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.split('.').next())
+        .unwrap_or("");
+    normalize_scope_token(stem)
+}
+
 pub fn is_generic_subject(subject: &str) -> bool {
     let s = subject.trim().to_ascii_lowercase().replace('—', "-");
     s.contains("build a generalizable") && s.contains("harness: coding cycle")
@@ -44,12 +53,7 @@ pub fn has_informative_subject_scope(subject: &str, changed_files: &[&str]) -> b
 
     changed_files.iter().any(|path| {
         let p = path.to_ascii_lowercase();
-        let stem = p
-            .rsplit('/')
-            .next()
-            .and_then(|name| name.split('.').next())
-            .unwrap_or("");
-        let stem_norm = normalize_scope_token(stem);
+        let stem_norm = normalize_file_stem_scope(&p);
         let dir_norm = normalize_scope_token(p.rsplit_once('/').map(|(dir, _)| dir).unwrap_or(""));
 
         scope == stem_norm

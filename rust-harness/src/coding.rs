@@ -26,6 +26,7 @@ const CODEGEN_MAX_ATTEMPTS: usize = 3;
 const OPENCLAW_ATTEMPTS_PER_CYCLE: usize = 1;
 const OPENCLAW_PLAN_TIMEOUT_SEC: u64 = 240;
 const OPENCLAW_CODE_TIMEOUT_SEC: u64 = 600;
+const DIFF_RUBRIC_REJECTION_STREAK_LIMIT: u64 = 3;
 const COMMIT_WATCHDOG_SEC: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -451,6 +452,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let mut unchanged_since_conformance = 0u64;
     let mut counters = EventCounters::default();
     let mut last_commit_ok_epoch = start_epoch;
+    let mut diff_rubric_rejection_streak = 0u64;
 
     while gate.is_active_at(now_unix()) {
         let now = now_unix();
@@ -732,6 +734,41 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 .with_task_id(cycle_id.clone())
                 .with_data(json!({ "hooks": hook_results })),
         )?;
+
+        let commit_rejected_by_rubric = hook_results.iter().any(|hook| {
+            hook.name == "commit"
+                && !hook.success
+                && !hook.skipped
+                && hook.detail.contains("diff rubric")
+        });
+
+        if commit_rejected_by_rubric {
+            diff_rubric_rejection_streak = diff_rubric_rejection_streak.saturating_add(1);
+        } else {
+            diff_rubric_rejection_streak = 0;
+        }
+
+        if diff_rubric_rejection_streak >= DIFF_RUBRIC_REJECTION_STREAK_LIMIT {
+            let reset_detail = run_dirty_tree_recovery(&repo_path)
+                .await
+                .unwrap_or_else(|e| format!("dirty-tree recovery failed: {e}"));
+            sink.emit(
+                &HarnessEvent::new(kinds::CODING_HEARTBEAT)
+                    .with_task_id(cycle_id.clone())
+                    .with_data(json!({
+                        "cycle": cycles_total,
+                        "warning": "dirty-tree spin detected; forced reset + fresh re-architecture",
+                        "recovery": reset_detail,
+                        "streak": diff_rubric_rejection_streak,
+                    })),
+            )?;
+
+            diff_rubric_rejection_streak = 0;
+            progress_memory.repeated_no_diff_task_id = None;
+            progress_memory.repeated_no_diff_cycles = 0;
+            save_progress_memory(&progress_path, &progress_memory)?;
+            continue;
+        }
 
         if meaningful_diff_this_cycle {
             noop_streak = 0;
@@ -3971,6 +4008,33 @@ async fn repo_dirty(repo_path: &Path) -> Result<bool> {
     }
 
     Ok(!String::from_utf8_lossy(&output.stdout).trim().is_empty())
+}
+
+async fn run_dirty_tree_recovery(repo_path: &Path) -> Result<String> {
+    let reset = Command::new("git")
+        .args(["reset", "--hard", "HEAD"])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .context("git reset --hard HEAD failed")?;
+
+    let clean = Command::new("git")
+        .args(["clean", "-fd", ".harness/supercycle", "runs"])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .context("git clean -fd .harness/supercycle runs failed")?;
+
+    let reset_ok = reset.status.success();
+    let clean_ok = clean.status.success();
+    let reset_stderr = String::from_utf8_lossy(&reset.stderr).trim().to_string();
+    let clean_stderr = String::from_utf8_lossy(&clean.stderr).trim().to_string();
+
+    Ok(format!(
+        "reset_ok={reset_ok} clean_ok={clean_ok} reset_stderr={} clean_stderr={}",
+        truncate_tail(&reset_stderr),
+        truncate_tail(&clean_stderr)
+    ))
 }
 
 async fn run_stage_commands(

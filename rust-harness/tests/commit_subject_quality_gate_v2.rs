@@ -44,3 +44,10 @@ fn accepts_hyphen_underscore_equivalent_scope_tokens() {
     assert!(has_informative_subject_scope(subject_hyphen, &changed));
     assert!(has_informative_subject_scope(subject_underscore, &changed));
 }
+
+#[test]
+fn accepts_dotted_stem_scope_variant() {
+    let changed = ["src/runtime_gate.v2.rs"];
+    let subject = "fix(runtime-gate-v2): preserve parsing compatibility";
+    assert!(has_informative_subject_scope(subject, &changed));
+}
