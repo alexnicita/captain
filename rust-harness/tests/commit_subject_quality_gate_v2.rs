@@ -33,3 +33,14 @@ fn rejects_scope_mismatch_even_when_conventional() {
     let subject = "fix(provider): tune endpoint fallback";
     assert!(!has_informative_subject_scope(subject, &changed));
 }
+
+#[test]
+fn accepts_hyphen_underscore_equivalent_scope_tokens() {
+    let changed = ["src/runtime_gate.rs", "src/coding.rs"];
+
+    let subject_hyphen = "fix(runtime-gate): tighten deadline parsing";
+    let subject_underscore = "fix(runtime_gate): tighten deadline parsing";
+
+    assert!(has_informative_subject_scope(subject_hyphen, &changed));
+    assert!(has_informative_subject_scope(subject_underscore, &changed));
+}

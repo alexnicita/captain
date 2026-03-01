@@ -3025,10 +3025,19 @@ fn rank_task_candidates(
     cycle: u64,
     escalate_source: bool,
 ) -> Vec<RankedTaskCandidate> {
+    let supercycle_tasks = collect_supercycle_tasks(repo_path);
     let doc_tasks = collect_doc_tasks(repo_path, escalate_source);
 
-    let mut tasks = doc_tasks;
-    tasks.extend(internal_fallback_tasks());
+    let mut tasks = Vec::new();
+    tasks.extend(supercycle_tasks.clone());
+    tasks.extend(doc_tasks);
+
+    // Fallback tasks are last resort only when no generated/sourced tasks exist.
+    if tasks.is_empty() {
+        tasks.extend(internal_fallback_tasks());
+    }
+
+    let has_supercycle_tasks = !supercycle_tasks.is_empty();
     let has_code_tasks = tasks.iter().any(|task| task.source.starts_with("src/"));
 
     let mut ranked = Vec::new();
@@ -3057,7 +3066,12 @@ fn rank_task_candidates(
         let cooldown_penalty = (cooldown_remaining as i64) * 120;
         let repeat_penalty = (history.selected_count as i64) * 18;
         let fallback_bonus = if task.id.starts_with("fallback::") {
-            160
+            60
+        } else {
+            0
+        };
+        let supercycle_bonus = if task.source.contains("TASK_PACK") {
+            420
         } else {
             0
         };
@@ -3066,10 +3080,17 @@ fn rank_task_candidates(
         } else {
             0
         };
-        let score = impact * 100 + novelty + feasibility * 25 + fallback_bonus
+        let fallback_penalty_when_supercycle =
+            if has_supercycle_tasks && task.id.starts_with("fallback::") {
+                600
+            } else {
+                0
+            };
+        let score = impact * 100 + novelty + feasibility * 25 + fallback_bonus + supercycle_bonus
             - cooldown_penalty
             - repeat_penalty
-            - docs_penalty;
+            - docs_penalty
+            - fallback_penalty_when_supercycle;
 
         ranked.push(RankedTaskCandidate {
             task,
@@ -3084,36 +3105,12 @@ fn rank_task_candidates(
 }
 
 fn ensure_roadmap_seed_tasks(repo_path: &Path) -> Result<()> {
-    let seed = [
-        "- [ ] Improve coding reliability in src/coding.rs with targeted tests",
-        "- [ ] Strengthen task ranking quality in src/coding.rs",
-        "- [ ] Harden commit quality rubric and scope checks",
-    ];
-
     let roadmap_path = repo_path.join("ROADMAP.md");
     let runbook_path = repo_path.join("RUNBOOK.md");
 
     if !roadmap_path.exists() {
-        let mut body = String::from("# ROADMAP\n\n## Auto-seeded tasks\n");
-        for line in seed {
-            body.push_str(line);
-            body.push('\n');
-        }
+        let body = "# ROADMAP\n\n## Notes\n- Task generation is driven by supercycle planning artifacts (`.harness/supercycle/*TASK_PACK*.md`) first.\n- Keep this file for human roadmap notes; avoid auto-seeded fallback task lists.\n";
         fs::write(&roadmap_path, body)?;
-    } else {
-        let content = fs::read_to_string(&roadmap_path).unwrap_or_default();
-        if !has_actionable_task_lines(&content) {
-            let mut body = content;
-            if !body.ends_with('\n') {
-                body.push('\n');
-            }
-            body.push_str("\n## Auto-seeded tasks\n");
-            for line in seed {
-                body.push_str(line);
-                body.push('\n');
-            }
-            fs::write(&roadmap_path, body)?;
-        }
     }
 
     if !runbook_path.exists() {
@@ -3124,8 +3121,60 @@ fn ensure_roadmap_seed_tasks(repo_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn has_actionable_task_lines(content: &str) -> bool {
-    content.lines().map(str::trim).any(looks_like_roadmap_task)
+fn collect_supercycle_tasks(repo_path: &Path) -> Vec<FeatureTask> {
+    let dir = repo_path.join(".harness/supercycle");
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+
+    let mut pack_files = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|s| s.to_str())
+                .map(|n| n.contains("TASK_PACK") && n.ends_with(".md"))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    pack_files.sort();
+
+    let Some(latest_pack) = pack_files.pop() else {
+        return Vec::new();
+    };
+
+    let Ok(content) = fs::read_to_string(&latest_pack) else {
+        return Vec::new();
+    };
+
+    let source_name = latest_pack
+        .strip_prefix(repo_path)
+        .unwrap_or(&latest_pack)
+        .display()
+        .to_string();
+
+    let mut tasks = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if !looks_like_roadmap_task(line) {
+            continue;
+        }
+
+        let task_id = format!("{}::{}", source_name, slugify_task_line(line));
+        tasks.push(FeatureTask {
+            id: task_id,
+            title: line
+                .trim_start_matches('-')
+                .trim_start_matches('*')
+                .trim_start_matches("[ ]")
+                .trim()
+                .to_string(),
+            source: source_name.clone(),
+            selected_line: line.to_string(),
+        });
+    }
+
+    tasks
 }
 
 fn collect_doc_tasks(repo_path: &Path, escalate_source: bool) -> Vec<FeatureTask> {
