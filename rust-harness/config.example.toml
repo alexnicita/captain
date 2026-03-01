@@ -2,7 +2,7 @@ event_log_path = "./runs/events.jsonl"
 
 [provider]
 kind = "http"
-model = "gpt-5.1-codex"
+model = "gpt-4.1"
 endpoint = "https://api.openai.com/v1/chat/completions"
 api_key_env = "OPENAI_API_KEY"
 timeout_ms = 20000

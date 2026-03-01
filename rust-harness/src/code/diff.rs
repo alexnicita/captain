@@ -24,7 +24,7 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
         repo_snapshot: &str,
     ) -> Result<CodeDiffProposal> {
         let objective = format!(
-            "Generate a unified git diff for task {}. Follow plan summary: {}. Return only a patch in ```diff``` when possible.",
+            "Generate a valid unified git diff for task {}. Follow plan summary: {}. Return ONLY raw patch text that starts with 'diff --git'. If no valid patch can be produced, return exactly NO_VALID_PATCH.",
             task.id, plan.summary
         );
 

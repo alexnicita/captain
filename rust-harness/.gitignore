@@ -6,4 +6,5 @@
 /.harness/*.json
 /.harness/forced-mutations.md
 /.harness/thinking.md
+/.harness/tmp/
 !/.harness/README.md

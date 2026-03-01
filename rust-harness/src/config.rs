@@ -43,7 +43,7 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             kind: "http".to_string(),
-            model: "gpt-5.1-codex".to_string(),
+            model: "gpt-4.1".to_string(),
             endpoint: Some("https://api.openai.com/v1/chat/completions".to_string()),
             api_key_env: Some("OPENAI_API_KEY".to_string()),
             timeout_ms: 20_000,

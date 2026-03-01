@@ -2541,10 +2541,11 @@ async fn repo_dirty(repo_path: &Path) -> Result<bool> {
     let output = Command::new("git")
         .arg("status")
         .arg("--porcelain")
+        .arg("--untracked-files=no")
         .current_dir(repo_path)
         .output()
         .await
-        .context("git status --porcelain failed")?;
+        .context("git status --porcelain --untracked-files=no failed")?;
 
     if !output.status.success() {
         return Err(anyhow!(
