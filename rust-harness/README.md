@@ -115,6 +115,10 @@ Environment overrides:
 - `HARNESS_PROVIDER_MAX_RETRIES`
 - scheduler knobs live in TOML (`scheduler.max_concurrent_tasks`, `scheduler.queue_poll_ms`)
 
+⚠️ Coding mode now runs a provider-backed `plan -> diff -> apply` stage before verify/commit hooks.
+Use a provider that can return unified diffs (`HARNESS_PROVIDER=http` with a working endpoint/model).
+`echo` / `http-stub` are useful for scaffolding, but they will not generate meaningful code patches.
+
 ## Dogfood workflow (harness-on-harness)
 
 ```bash

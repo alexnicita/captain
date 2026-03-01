@@ -29,6 +29,9 @@ Use `[p1]` prefix for high-priority queue items in the objectives file.
 cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h
 ```
 
+Coding mode expects a provider capable of unified diff generation.
+For real code output, use `provider.kind = "http"` (or `HARNESS_PROVIDER=http`) with a reachable endpoint/model.
+
 Optional prompt input (empty by default unless supplied):
 
 ```bash

@@ -519,6 +519,7 @@ async fn coding_mode(cfg: &AppConfig, args: CodingModeArgs) -> Result<()> {
         conformance_interval_unchanged: args.conformance_interval_unchanged,
         progress_file: args.progress_file,
         run_lock_file: args.run_lock_file,
+        provider_cfg: cfg.provider.clone(),
         event_log_path: cfg.event_log_path.clone(),
     })
     .await?;

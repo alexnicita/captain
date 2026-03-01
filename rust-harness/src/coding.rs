@@ -1,4 +1,9 @@
+use crate::code::{
+    CodeCycleEngine, CodeTask, GitApplyDiffApplier, ProviderCodePlanner, ProviderDiffGenerator,
+};
+use crate::config::ProviderConfig;
 use crate::events::{kinds, now_unix, EventSink, HarnessEvent};
+use crate::provider::{build_provider, Provider};
 use crate::runtime_gate::RuntimeGate;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -8,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
@@ -44,6 +50,7 @@ pub struct CodingRunArgs {
     pub conformance_interval_unchanged: u64,
     pub progress_file: Option<String>,
     pub run_lock_file: Option<String>,
+    pub provider_cfg: ProviderConfig,
     pub event_log_path: String,
 }
 
@@ -305,6 +312,17 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         ));
     }
 
+    let built_provider = build_provider(&args.provider_cfg);
+    let provider_requested_kind = built_provider.requested_kind.clone();
+    let provider_resolved_kind = built_provider.resolved_kind.clone();
+    let provider_fallback_reason = built_provider.fallback_reason.clone();
+    let provider: Arc<dyn Provider> = Arc::from(built_provider.provider);
+    let code_engine = CodeCycleEngine::new(
+        Arc::new(ProviderCodePlanner::new(provider.clone())),
+        Arc::new(ProviderDiffGenerator::new(provider.clone())),
+        Arc::new(GitApplyDiffApplier),
+    );
+
     let sink = EventSink::new(&args.event_log_path)?;
     let _repo_lock = match acquire_repo_run_lock(&lock_path) {
         Ok(lock) => {
@@ -346,6 +364,9 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         "duration_sec": args.duration_sec,
         "executor": executor.name(),
         "allowlisted_commands": executor.policy().allowlisted_commands.clone(),
+        "provider_requested": provider_requested_kind.clone(),
+        "provider_resolved": provider_resolved_kind.clone(),
+        "provider_fallback_reason": provider_fallback_reason.clone(),
         "deadline_epoch": gate.deadline_epoch(),
         "prompt_provided": user_prompt.is_some(),
         "user_prompt": user_prompt.clone(),
@@ -360,6 +381,9 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             "repo": repo_path.display().to_string(),
             "duration_sec": args.duration_sec,
             "executor": executor.name(),
+            "provider_requested": provider_requested_kind.clone(),
+            "provider_resolved": provider_resolved_kind.clone(),
+            "provider_fallback_reason": provider_fallback_reason.clone(),
             "deadline_epoch": gate.deadline_epoch(),
             "prompt_provided": user_prompt.is_some(),
             "user_prompt": user_prompt.clone(),
@@ -472,11 +496,30 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             .unwrap_or_else(|| {
                 "executing feature phase from current working tree state".to_string()
             });
-        let act_result = if architecture_result.success && plan_result.success {
-            executor.act(&ctx).await
+
+        let codegen_result = if architecture_result.success && plan_result.success {
+            run_codegen_stage(
+                &code_engine,
+                &ctx,
+                selected_task.as_ref(),
+                user_prompt.as_deref(),
+            )
+            .await
         } else {
             StageResult::skipped(WorkStage::Act, "architecture/plan stage failed")
         };
+
+        let command_act_result =
+            if architecture_result.success && plan_result.success && codegen_result.success {
+                executor.act(&ctx).await
+            } else if !codegen_result.success {
+                StageResult::skipped(WorkStage::Act, "code-diff engine stage failed")
+            } else {
+                StageResult::skipped(WorkStage::Act, "architecture/plan stage failed")
+            };
+
+        let act_result = merge_stage_results(WorkStage::Act, codegen_result, command_act_result);
+
         sink.emit(
             &HarnessEvent::new(kinds::CODING_CYCLE_ACT)
                 .with_task_id(cycle_id.clone())
@@ -834,6 +877,300 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
     Ok(Box::new(executor))
 }
 
+fn merge_stage_results(stage: WorkStage, first: StageResult, second: StageResult) -> StageResult {
+    let mut commands = first.commands;
+    commands.extend(second.commands);
+
+    let success = first.success && second.success;
+    let error = if first.success {
+        second.error.or(first.error)
+    } else {
+        first.error.or(second.error)
+    };
+
+    StageResult {
+        stage,
+        success,
+        error,
+        commands,
+    }
+}
+
+async fn run_codegen_stage(
+    engine: &CodeCycleEngine,
+    ctx: &CycleContext,
+    selected_task: Option<&FeatureTask>,
+    user_prompt: Option<&str>,
+) -> StageResult {
+    let stage_start = Instant::now();
+
+    let Some(selected_task) = selected_task else {
+        return StageResult {
+            stage: WorkStage::Act,
+            success: true,
+            error: None,
+            commands: vec![CommandExecution {
+                stage: WorkStage::Act,
+                command: "code-engine bypass (no selected task)".to_string(),
+                argv: vec!["code-engine".to_string(), "skip".to_string()],
+                success: true,
+                exit_code: Some(0),
+                duration_ms: 0,
+                stdout_tail: "no selected architecture task; skipping code engine".to_string(),
+                stderr_tail: String::new(),
+                error: None,
+            }],
+        };
+    };
+
+    let repo_snapshot = match build_repo_snapshot(&ctx.repo_path, selected_task, user_prompt).await
+    {
+        Ok(snapshot) => snapshot,
+        Err(err) => {
+            let message = format!("failed to build repo snapshot for code engine: {err}");
+            return StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(message.clone()),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "code-engine plan->diff->apply".to_string(),
+                    argv: vec!["code-engine".to_string(), "snapshot".to_string()],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: String::new(),
+                    stderr_tail: truncate_tail(&message),
+                    error: Some(message),
+                }],
+            };
+        }
+    };
+
+    let task = build_code_task(selected_task, ctx, user_prompt);
+
+    match engine
+        .run_cycle(&ctx.repo_path, &task, &repo_snapshot)
+        .await
+    {
+        Ok(report) => {
+            let changed_files = report.diff_applied.changed_files.clone();
+            let success = report.diff_applied.applied && !changed_files.is_empty();
+            let detail = if success {
+                format!(
+                    "code engine applied patch touching {} files",
+                    changed_files.len()
+                )
+            } else {
+                format!(
+                    "code-diff engine produced no applied file changes: {}",
+                    report.diff_applied.detail
+                )
+            };
+
+            let payload = json!({
+                "task_id": report.task_id,
+                "plan_summary": report.planned.summary,
+                "diff_summary": report.diff_generated.summary,
+                "touched_files": report.diff_generated.touched_files,
+                "changed_files": changed_files,
+                "apply_detail": report.diff_applied.detail,
+            });
+
+            StageResult {
+                stage: WorkStage::Act,
+                success,
+                error: if success { None } else { Some(detail.clone()) },
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "code-engine plan->diff->apply".to_string(),
+                    argv: vec!["code-engine".to_string(), task.id.clone()],
+                    success,
+                    exit_code: Some(if success { 0 } else { 1 }),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: truncate_tail(&payload.to_string()),
+                    stderr_tail: if success {
+                        String::new()
+                    } else {
+                        truncate_tail(&detail)
+                    },
+                    error: if success { None } else { Some(detail) },
+                }],
+            }
+        }
+        Err(err) => {
+            let message = format!("code-diff engine failed: {err}");
+            StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(message.clone()),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "code-engine plan->diff->apply".to_string(),
+                    argv: vec!["code-engine".to_string(), task.id],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: String::new(),
+                    stderr_tail: truncate_tail(&message),
+                    error: Some(message),
+                }],
+            }
+        }
+    }
+}
+
+fn build_code_task(
+    selected_task: &FeatureTask,
+    ctx: &CycleContext,
+    user_prompt: Option<&str>,
+) -> CodeTask {
+    let target_files = infer_target_files(selected_task);
+    let mut objective = selected_task.title.clone();
+    if let Some(prompt) = user_prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        objective = format!("{} | user prompt: {}", objective, prompt);
+    }
+
+    let mut constraints = vec![
+        "Produce a valid unified diff patch.".to_string(),
+        "Keep edits minimal and aligned to the selected task.".to_string(),
+        "Avoid unrelated formatting churn.".to_string(),
+    ];
+
+    if selected_task.source.ends_with(".md") {
+        constraints.push(
+            "Prefer docs-scoped changes unless task text clearly requires code edits.".to_string(),
+        );
+    } else {
+        constraints
+            .push("Prioritize src/ implementation updates before docs-only edits.".to_string());
+    }
+
+    CodeTask {
+        id: format!("{}::cycle-{}", selected_task.id, ctx.cycle),
+        objective,
+        architecture_goal: selected_task.selected_line.clone(),
+        constraints,
+        target_files,
+        acceptance_criteria: vec![
+            format!("Advance selected task: {}", selected_task.title),
+            "Produce a non-empty meaningful git diff.".to_string(),
+            "Keep project checks green after apply.".to_string(),
+        ],
+    }
+}
+
+fn infer_target_files(task: &FeatureTask) -> Vec<String> {
+    let mut files = BTreeSet::new();
+
+    if looks_like_repo_path(&task.source) {
+        files.insert(task.source.clone());
+    }
+
+    for text in [&task.title, &task.selected_line] {
+        for token in text.split_whitespace() {
+            let cleaned = token.trim_matches(|c: char| {
+                c == '`'
+                    || c == ','
+                    || c == ';'
+                    || c == '.'
+                    || c == ':'
+                    || c == '"'
+                    || c == '\''
+                    || c == '('
+                    || c == ')'
+                    || c == '['
+                    || c == ']'
+            });
+            if looks_like_repo_path(cleaned) {
+                files.insert(cleaned.to_string());
+            }
+        }
+    }
+
+    if files.is_empty() {
+        if task.source.ends_with(".md") {
+            files.insert(task.source.clone());
+        } else {
+            files.insert("src/coding.rs".to_string());
+        }
+    }
+
+    files.into_iter().collect()
+}
+
+fn looks_like_repo_path(candidate: &str) -> bool {
+    if candidate.is_empty() || candidate.starts_with('-') {
+        return false;
+    }
+
+    let has_supported_extension = [".rs", ".md", ".toml", ".sh", ".json", ".yaml", ".yml"]
+        .iter()
+        .any(|suffix| candidate.ends_with(suffix));
+
+    has_supported_extension && (candidate.contains('/') || candidate.starts_with("Cargo"))
+}
+
+async fn build_repo_snapshot(
+    repo_path: &Path,
+    selected_task: &FeatureTask,
+    user_prompt: Option<&str>,
+) -> Result<String> {
+    let branch = capture_git_output(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]).await?;
+    let head = capture_git_output(repo_path, &["log", "-1", "--oneline"]).await?;
+    let status = capture_git_output(repo_path, &["status", "--short"]).await?;
+    let diff_stat = capture_git_output(repo_path, &["diff", "--stat"]).await?;
+    let tracked_files = capture_git_output(repo_path, &["ls-files"]).await?;
+
+    let tracked_preview = tracked_files
+        .lines()
+        .take(80)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(format!(
+        "branch={branch}\nhead={head}\nselected_task={}\nselected_source={}\nuser_prompt={}\nstatus:\n{}\ndiff_stat:\n{}\ntracked_files:\n{}",
+        selected_task.title,
+        selected_task.source,
+        user_prompt.unwrap_or_default(),
+        if status.is_empty() { "(clean)" } else { status.as_str() },
+        if diff_stat.is_empty() {
+            "(no unstaged diff)"
+        } else {
+            diff_stat.as_str()
+        },
+        if tracked_preview.is_empty() {
+            "(no tracked files)"
+        } else {
+            tracked_preview.as_str()
+        }
+    ))
+}
+
+async fn capture_git_output(repo_path: &Path, args: &[&str]) -> Result<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo_path)
+        .output()
+        .await
+        .with_context(|| format!("git {} failed to execute", args.join(" ")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(anyhow!(
+            "git {} failed: {}",
+            args.join(" "),
+            if stderr.is_empty() {
+                format!("exit status {}", output.status)
+            } else {
+                stderr
+            }
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 #[derive(Debug)]
 struct DefaultCommands {
     plan: Vec<String>,
@@ -941,106 +1278,132 @@ async fn run_cycle_hooks(
         user_prompt: user_prompt.map(ToOwned::to_owned),
     };
 
-    let fetch_result =
-        execute_command_line(WorkStage::Act, "git fetch --all --prune", &hook_ctx, policy).await;
-    hooks.push(HookResult {
-        name: "git_fetch".to_string(),
-        success: fetch_result.success,
-        skipped: false,
-        detail: if fetch_result.success {
-            "git fetch completed".to_string()
-        } else {
-            format!("git fetch failed: {}", summarize_error(&fetch_result))
-        },
-    });
-    if !fetch_result.success {
-        let detail = "git fetch failed before commit".to_string();
-        hooks.push(HookResult {
-            name: "commit".to_string(),
-            success: false,
-            skipped: true,
-            detail: detail.clone(),
-        });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, true, None, None, "blocked", &detail,
-        )?;
-        emit_git_push_event(
-            sink,
-            cycle_id,
-            cycle,
-            false,
-            true,
-            None,
-            None,
-            "blocked",
-            "push skipped because git fetch failed",
-        )?;
-        return Ok(hooks);
-    }
-
-    let pull_result =
-        execute_command_line(WorkStage::Act, "git pull --ff-only", &hook_ctx, policy).await;
-    let conflict_files = unresolved_conflicts(repo_path).await.unwrap_or_default();
-    let pull_conflict = !pull_result.success && !conflict_files.is_empty();
-    hooks.push(HookResult {
-        name: "git_pull".to_string(),
-        success: pull_result.success,
-        skipped: false,
-        detail: if pull_result.success {
-            "git pull merged cleanly".to_string()
-        } else if pull_conflict {
-            format!(
-                "git pull conflict; unresolved files: {}",
-                conflict_files.join(", ")
-            )
-        } else {
-            format!("git pull failed: {}", summarize_error(&pull_result))
-        },
-    });
-
-    hooks.push(HookResult {
-        name: "conflict_resolution".to_string(),
-        success: conflict_files.is_empty(),
-        skipped: false,
-        detail: if conflict_files.is_empty() {
-            "no unresolved conflicts".to_string()
-        } else {
-            format!("unresolved conflicts remain: {}", conflict_files.join(", "))
-        },
-    });
-
-    if !pull_result.success || !conflict_files.is_empty() {
-        let detail = if !pull_result.success {
-            "git pull failed before commit".to_string()
-        } else {
-            "unresolved merge conflicts remain".to_string()
-        };
-        hooks.push(HookResult {
-            name: "commit".to_string(),
-            success: false,
-            skipped: true,
-            detail: detail.clone(),
-        });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, true, None, None, "blocked", &detail,
-        )?;
-        emit_git_push_event(
-            sink,
-            cycle_id,
-            cycle,
-            false,
-            true,
-            None,
-            None,
-            "blocked",
-            "push skipped because pull/conflict gate did not pass",
-        )?;
-        return Ok(hooks);
-    }
-
-    let dirty = repo_dirty(repo_path)
+    let mut dirty = repo_dirty(repo_path)
         .await
         .with_context(|| "failed to inspect git status before commit hook")?;
+
+    if dirty {
+        hooks.push(HookResult {
+            name: "git_fetch".to_string(),
+            success: true,
+            skipped: true,
+            detail: "skipped git fetch because local changes are pending commit".to_string(),
+        });
+        hooks.push(HookResult {
+            name: "git_pull".to_string(),
+            success: true,
+            skipped: true,
+            detail: "skipped git pull because local changes are pending commit".to_string(),
+        });
+        hooks.push(HookResult {
+            name: "conflict_resolution".to_string(),
+            success: true,
+            skipped: true,
+            detail: "skipped conflict check because pull was skipped".to_string(),
+        });
+    } else {
+        let fetch_result =
+            execute_command_line(WorkStage::Act, "git fetch --all --prune", &hook_ctx, policy)
+                .await;
+        hooks.push(HookResult {
+            name: "git_fetch".to_string(),
+            success: fetch_result.success,
+            skipped: false,
+            detail: if fetch_result.success {
+                "git fetch completed".to_string()
+            } else {
+                format!("git fetch failed: {}", summarize_error(&fetch_result))
+            },
+        });
+        if !fetch_result.success {
+            let detail = "git fetch failed before commit".to_string();
+            hooks.push(HookResult {
+                name: "commit".to_string(),
+                success: false,
+                skipped: true,
+                detail: detail.clone(),
+            });
+            emit_git_commit_event(
+                sink, cycle_id, cycle, false, true, None, None, "blocked", &detail,
+            )?;
+            emit_git_push_event(
+                sink,
+                cycle_id,
+                cycle,
+                false,
+                true,
+                None,
+                None,
+                "blocked",
+                "push skipped because git fetch failed",
+            )?;
+            return Ok(hooks);
+        }
+
+        let pull_result =
+            execute_command_line(WorkStage::Act, "git pull --ff-only", &hook_ctx, policy).await;
+        let conflict_files = unresolved_conflicts(repo_path).await.unwrap_or_default();
+        let pull_conflict = !pull_result.success && !conflict_files.is_empty();
+        hooks.push(HookResult {
+            name: "git_pull".to_string(),
+            success: pull_result.success,
+            skipped: false,
+            detail: if pull_result.success {
+                "git pull merged cleanly".to_string()
+            } else if pull_conflict {
+                format!(
+                    "git pull conflict; unresolved files: {}",
+                    conflict_files.join(", ")
+                )
+            } else {
+                format!("git pull failed: {}", summarize_error(&pull_result))
+            },
+        });
+
+        hooks.push(HookResult {
+            name: "conflict_resolution".to_string(),
+            success: conflict_files.is_empty(),
+            skipped: false,
+            detail: if conflict_files.is_empty() {
+                "no unresolved conflicts".to_string()
+            } else {
+                format!("unresolved conflicts remain: {}", conflict_files.join(", "))
+            },
+        });
+
+        if !pull_result.success || !conflict_files.is_empty() {
+            let detail = if !pull_result.success {
+                "git pull failed before commit".to_string()
+            } else {
+                "unresolved merge conflicts remain".to_string()
+            };
+            hooks.push(HookResult {
+                name: "commit".to_string(),
+                success: false,
+                skipped: true,
+                detail: detail.clone(),
+            });
+            emit_git_commit_event(
+                sink, cycle_id, cycle, false, true, None, None, "blocked", &detail,
+            )?;
+            emit_git_push_event(
+                sink,
+                cycle_id,
+                cycle,
+                false,
+                true,
+                None,
+                None,
+                "blocked",
+                "push skipped because pull/conflict gate did not pass",
+            )?;
+            return Ok(hooks);
+        }
+
+        dirty = repo_dirty(repo_path)
+            .await
+            .with_context(|| "failed to inspect git status before commit hook")?;
+    }
 
     if !dirty {
         let detail = "no tracked changes".to_string();
@@ -2527,6 +2890,7 @@ mod tests {
             conformance_interval_unchanged: 3,
             progress_file: None,
             run_lock_file: None,
+            provider_cfg: ProviderConfig::default(),
             event_log_path: dir.path().join("events.jsonl").display().to_string(),
         };
 
