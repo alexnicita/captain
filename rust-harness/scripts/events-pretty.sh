@@ -46,12 +46,16 @@ if [[ "$FORMAT" == "emoji" ]]; then
     def ts: (.ts_unix // .epoch // 0 | tonumber | strftime("%H:%M:%S"));
     def rid: (.run_id // "-");
     def d: (.data // {});
+    def task_title: (if (d.selected_task|type)=="object" then (d.selected_task.title // d.selected_task.id // "none") else (d.selected_task // "none") end);
+    def act_cmd: ((d.commands // [])[0] // {});
+    def act_prompt_path: ((act_cmd.stdout_tail // "") | fromjson? | .prompt_path // "");
+    def act_apply_detail: ((act_cmd.stdout_tail // "") | fromjson? | .apply_detail // "");
 
     if .kind=="coding.phase" then
       "\n["+ts+"] 🧩 PHASE: "+(d.phase|trunc(40))+"\n"
       +"  run: "+rid+"\n"
       +"  reason: "+(d.reason|trunc(120))+"\n"
-      +"  task: "+(d.selected_task|trunc(120))+"\n"
+      +"  task: "+(task_title|trunc(120))+"\n"
       +"  next: "+(d.next|trunc(120))
     elif .kind=="coding.cycle.started" then
       "\n["+ts+"] 🧠 CYCLE #"+((d.cycle // "?")|tostring)+" START\n"
@@ -60,6 +64,9 @@ if [[ "$FORMAT" == "emoji" ]]; then
       "["+ts+"] 🗺️ PLAN cycle #"+((d.cycle // "?")|tostring)+" ok="+((d.success // "?")|tostring)
     elif .kind=="coding.cycle.act" then
       "["+ts+"] ⚙️ ACT cycle #"+((d.cycle // "?")|tostring)+" ok="+((d.success // "?")|tostring)
+      + (if (act_prompt_path|length)>0 then "\n  prompt: "+(act_prompt_path|trunc(160)) else "" end)
+      + (if (act_apply_detail|length)>0 then "\n  result: "+(act_apply_detail|trunc(160)) else "" end)
+      + (if ((d.error // "")|length)>0 then "\n  error: "+((d.error // "")|trunc(160)) else "" end)
     elif .kind=="coding.cycle.verify" then
       "["+ts+"] ✅ VERIFY cycle #"+((d.cycle // "?")|tostring)+" ok="+((d.success // "?")|tostring)
     elif .kind=="git.fetch" then
