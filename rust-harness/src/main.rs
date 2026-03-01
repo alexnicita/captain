@@ -599,6 +599,20 @@ async fn prepare_start_workspace(repo: &str) -> Result<()> {
     let lock_path = repo_path.join(".git/.agent-harness-code.lock");
     let _ = fs::remove_file(lock_path);
 
+    // Clear stale OpenClaw harness session locks created by prior run-scoped sessions.
+    if let Ok(home) = std::env::var("HOME") {
+        let sessions_dir = Path::new(&home).join(".openclaw/agents/main/sessions");
+        if let Ok(entries) = fs::read_dir(&sessions_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if name.starts_with("harness-run-") && name.ends_with(".jsonl.lock") {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
+    }
+
     let supercycle_dir = repo_path.join(".harness/supercycle");
     if supercycle_dir.exists() {
         fs::remove_dir_all(&supercycle_dir)?;
