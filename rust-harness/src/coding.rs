@@ -1398,6 +1398,45 @@ async fn run_openclaw_codegen_stage(
     }
 }
 
+async fn run_openclaw_agent_text_once(
+    repo_path: &Path,
+    prompt: &str,
+    session_id: &str,
+    timeout_sec: u64,
+) -> Result<String> {
+    let output = Command::new("openclaw")
+        .arg("agent")
+        .arg("--local")
+        .arg("--agent")
+        .arg("main")
+        .arg("--session-id")
+        .arg(session_id)
+        .arg("--timeout")
+        .arg(timeout_sec.to_string())
+        .arg("--thinking")
+        .arg("low")
+        .arg("--json")
+        .arg("--message")
+        .arg(prompt)
+        .current_dir(repo_path)
+        .output()
+        .await
+        .context("failed to execute openclaw agent")?;
+
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(anyhow!(
+            "openclaw agent exited with {}: {}",
+            output.status,
+            truncate_tail(&stderr_text)
+        ));
+    }
+
+    let payload = extract_openclaw_payload_text(&stdout_text).unwrap_or(stdout_text);
+    Ok(payload)
+}
+
 async fn run_openclaw_agent_once(
     repo_path: &Path,
     prompt: &str,
@@ -1447,8 +1486,9 @@ fn build_openclaw_json_only_prompt_with_attempt(
     let user_prompt = user_prompt.unwrap_or("");
     let previous_error = previous_error.unwrap_or("");
     let nrp = load_nrp_protocol(&ctx.repo_path);
+    let research = load_latest_research_context(&ctx.repo_path);
     format!(
-        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
+        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
         cycle = ctx.cycle,
         attempt = attempt,
         attempt_limit = OPENCLAW_ATTEMPTS_PER_CYCLE,
@@ -1458,8 +1498,49 @@ fn build_openclaw_json_only_prompt_with_attempt(
         user_prompt = user_prompt,
         previous_error = previous_error,
         snapshot = repo_snapshot,
+        research = research,
         nrp = nrp,
     )
+}
+
+fn load_latest_research_context(repo_path: &Path) -> String {
+    let base = repo_path.join(".harness/supercycle");
+    if !base.exists() {
+        return "(no research context available for this cycle)".to_string();
+    }
+
+    let mut latest: Option<PathBuf> = None;
+    if let Ok(entries) = fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if name.contains("RESEARCH.md")
+                && latest.as_ref().map(|x| p > *x).unwrap_or(true)
+            {
+                latest = Some(p);
+            }
+        }
+    }
+
+    let Some(path) = latest else {
+        return "(no research context available for this cycle)".to_string();
+    };
+
+    match fs::read_to_string(path) {
+        Ok(content) => {
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
+                "(research context file was empty)".to_string()
+            } else if trimmed.len() > 3000 {
+                format!("{}...", &trimmed[..3000])
+            } else {
+                trimmed.to_string()
+            }
+        }
+        Err(_) => "(failed to load research context)".to_string(),
+    }
 }
 
 fn write_openclaw_prompt_artifact(
@@ -2505,21 +2586,49 @@ async fn run_supercycle_planning(
     let architecture = planning_dir.join(format!("cycle-{}-ARCH_REMAP.md", cycle));
     let task_graph = planning_dir.join(format!("cycle-{}-TASK_GRAPH.md", cycle));
     let task_pack = planning_dir.join(format!("cycle-{}-TASK_PACK.md", cycle));
+    let research_prompt_path = planning_dir.join(format!("cycle-{}-RESEARCH_PROMPT.md", cycle));
+    let research_result_path = planning_dir.join(format!("cycle-{}-RESEARCH.md", cycle));
 
     let prompt = user_prompt.unwrap_or("");
+
+    let research_prompt = format!(
+        "You are preparing a cycle planning brief for an autonomous Rust coding harness.\n\nUser goal:\n{prompt}\n\nRepository focus:\n- Rust project\n- Prioritize src/ + tests improvements\n- Avoid docs-only churn\n\nProduce concise best-practices guidance for this cycle in markdown with sections:\n1) Risks to avoid\n2) Code quality checklist\n3) Test strategy\n4) Concrete task-shaping advice (file/function scoped)\n5) Commit-quality guardrails\n\nKeep it practical and execution-oriented."
+    );
+    fs::write(&research_prompt_path, &research_prompt)?;
+
+    let research_doc = if research_budget_sec > 0 {
+        let timeout_sec = research_budget_sec.clamp(30, 600);
+        let session_id = format!("harness-research-{cycle}");
+        match run_openclaw_agent_text_once(repo_path, &research_prompt, &session_id, timeout_sec)
+            .await
+        {
+            Ok(text) if !text.trim().is_empty() => text,
+            Ok(_) => "(research phase returned empty output)".to_string(),
+            Err(err) => format!("(research phase failed: {err})"),
+        }
+    } else {
+        "(research disabled: set --research-budget-sec > 0 to enable)".to_string()
+    };
+    fs::write(&research_result_path, &research_doc)?;
+
     fs::write(
         &architecture,
         format!(
-            "# ARCH_REMAP cycle {cycle}\n\n## Goal\n{prompt}\n\n## Subsystems\n- runtime loop + phase state machine\n- task synthesis + ranking\n- openclaw execution adapter\n- quality + commit rubric\n\n## Candidate remaps\n1. Extract supercycle planner from coding.rs into dedicated module\n2. Introduce strict one-cycle gate with rollback\n3. Split quality rubric into reusable engine\n\n## Source index size\n{} files under src/\n",
+            "# ARCH_REMAP cycle {cycle}\n\n## Goal\n{prompt}\n\n## Research brief\nSee: `{}`\n\n## Subsystems\n- runtime loop + phase state machine\n- task synthesis + ranking\n- openclaw execution adapter\n- quality + commit rubric\n\n## Candidate remaps\n1. Extract supercycle planner from coding.rs into dedicated module\n2. Introduce strict one-cycle gate with rollback\n3. Split quality rubric into reusable engine\n\n## Source index size\n{} files under src/\n",
+            research_result_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("cycle-RESEARCH.md"),
             src_files.len()
         ),
     )?;
 
     let mut graph = String::from("# TASK_GRAPH\n\n");
-    graph.push_str("1. architecture remap doc generation\n");
-    graph.push_str("2. generate file/function task pack\n");
-    graph.push_str("3. execute one scoped change + test\n");
-    graph.push_str("4. verify + commit\n");
+    graph.push_str("1. research brief generation\n");
+    graph.push_str("2. architecture remap doc generation\n");
+    graph.push_str("3. generate file/function task pack\n");
+    graph.push_str("4. execute one scoped change + test\n");
+    graph.push_str("5. verify + commit\n");
     fs::write(&task_graph, graph)?;
 
     let mut pack = String::from("# TASK_PACK\n\n## Concrete file/function tasks\n");
@@ -2532,9 +2641,6 @@ async fn run_supercycle_planning(
     }
     fs::write(&task_pack, pack)?;
 
-    if research_budget_sec > 0 {
-        sleep(Duration::from_secs(research_budget_sec.min(30))).await;
-    }
     if planning_budget_sec > 0 {
         sleep(Duration::from_secs(planning_budget_sec.min(30))).await;
     }
