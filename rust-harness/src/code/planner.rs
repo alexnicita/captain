@@ -34,7 +34,10 @@ impl CodePlanner for ProviderCodePlanner {
             context: vec![
                 format!("task_id={}", task.id),
                 format!("target_files={}", task.target_files.join(",")),
-                format!("acceptance_criteria={}", task.acceptance_criteria.join(" | ")),
+                format!(
+                    "acceptance_criteria={}",
+                    task.acceptance_criteria.join(" | ")
+                ),
                 format!("repo_snapshot={repo_snapshot}"),
             ],
             available_tools: vec![],
@@ -44,7 +47,12 @@ impl CodePlanner for ProviderCodePlanner {
         let steps = parse_steps(&resp.message, &task.target_files);
 
         Ok(ArchitecturePlan {
-            summary: resp.message.lines().next().unwrap_or("planned via provider").to_string(),
+            summary: resp
+                .message
+                .lines()
+                .next()
+                .unwrap_or("planned via provider")
+                .to_string(),
             steps,
             risk_checks: task.acceptance_criteria.clone(),
         })
@@ -59,10 +67,15 @@ fn parse_steps(message: &str, target_files: &[String]) -> Vec<ArchitecturePlanSt
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.starts_with('-') || trimmed.starts_with('*') || trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        if trimmed.starts_with('-')
+            || trimmed.starts_with('*')
+            || trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
+        {
             steps.push(ArchitecturePlanStep {
                 title: trimmed
-                    .trim_start_matches(|c: char| c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ')')
+                    .trim_start_matches(|c: char| {
+                        c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ')'
+                    })
                     .trim()
                     .to_string(),
                 rationale: "generated from provider planning response".to_string(),

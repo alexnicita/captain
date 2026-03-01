@@ -23,7 +23,11 @@ pub trait CodeDiffGenerator: Send + Sync {
 
 #[async_trait]
 pub trait CodeDiffApplier: Send + Sync {
-    async fn apply_diff(&self, repo_path: &Path, proposal: &CodeDiffProposal) -> Result<CodeApplyResult>;
+    async fn apply_diff(
+        &self,
+        repo_path: &Path,
+        proposal: &CodeDiffProposal,
+    ) -> Result<CodeApplyResult>;
 }
 
 pub struct CodeCycleEngine {

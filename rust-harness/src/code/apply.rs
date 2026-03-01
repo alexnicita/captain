@@ -17,7 +17,11 @@ impl Default for GitApplyDiffApplier {
 
 #[async_trait]
 impl CodeDiffApplier for GitApplyDiffApplier {
-    async fn apply_diff(&self, repo_path: &Path, proposal: &CodeDiffProposal) -> Result<CodeApplyResult> {
+    async fn apply_diff(
+        &self,
+        repo_path: &Path,
+        proposal: &CodeDiffProposal,
+    ) -> Result<CodeApplyResult> {
         let patch_path = write_patch(repo_path, &proposal.unified_diff)?;
 
         let apply = Command::new("git")

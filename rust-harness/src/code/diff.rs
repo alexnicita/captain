@@ -44,7 +44,10 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
         let touched_files = extract_touched_files(&patch);
 
         Ok(CodeDiffProposal {
-            summary: format!("provider generated patch touching {} files", touched_files.len()),
+            summary: format!(
+                "provider generated patch touching {} files",
+                touched_files.len()
+            ),
             unified_diff: patch,
             touched_files,
         })
