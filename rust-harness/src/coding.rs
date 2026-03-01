@@ -1,5 +1,6 @@
 use crate::code::{
-    CodeCycleEngine, CodeTask, GitApplyDiffApplier, ProviderCodePlanner, ProviderDiffGenerator,
+    CodeCycleEngine, CodeDiffApplier, CodeDiffProposal, CodeTask, GitApplyDiffApplier,
+    ProviderCodePlanner, ProviderDiffGenerator,
 };
 use crate::config::ProviderConfig;
 use crate::events::{kinds, now_unix, EventSink, HarnessEvent};
@@ -28,6 +29,7 @@ const CODEGEN_MAX_ATTEMPTS: usize = 3;
 pub enum ExecutorPreset {
     Shell,
     Cargo,
+    OpenClaw,
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +235,7 @@ pub struct CycleContext {
     pub cycle: u64,
     pub repo_path: PathBuf,
     pub user_prompt: Option<String>,
+    pub selected_task: Option<FeatureTask>,
 }
 
 #[async_trait]
@@ -420,12 +423,6 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         let cycle_id = format!("cycle-{}", cycles_total);
         let cycle_start = Instant::now();
 
-        let ctx = CycleContext {
-            cycle: cycles_total,
-            repo_path: repo_path.clone(),
-            user_prompt: user_prompt.clone(),
-        };
-
         sink.emit(
             &HarnessEvent::new(kinds::TASK_STARTED)
                 .with_task_id(cycle_id.clone())
@@ -474,6 +471,14 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             "feature",
         )?;
         let selected_task = architecture_result.selected_task.clone();
+
+        let ctx = CycleContext {
+            cycle: cycles_total,
+            repo_path: repo_path.clone(),
+            user_prompt: user_prompt.clone(),
+            selected_task: selected_task.clone(),
+        };
+
         if let Some(task) = selected_task.as_ref() {
             record_task_selection(&mut progress_memory, task, cycles_total);
             save_progress_memory(&progress_path, &progress_memory)?;
@@ -504,6 +509,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 &ctx,
                 selected_task.as_ref(),
                 user_prompt.as_deref(),
+                args.preset,
             )
             .await
         } else {
@@ -820,7 +826,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 }
 
 fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
-    let policy = CommandPolicy::with_extra_commands(&args.allow_cmd);
+    let mut policy = CommandPolicy::with_extra_commands(&args.allow_cmd);
 
     let (plan_cmd, act_cmd, verify_cmd, label) = match args.preset {
         ExecutorPreset::Cargo => {
@@ -862,6 +868,31 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
             },
             "shell",
         ),
+        ExecutorPreset::OpenClaw => {
+            policy.allowlisted_commands.insert("openclaw".to_string());
+            (
+                if args.plan_cmd.is_empty() {
+                    vec!["git status --short".to_string()]
+                } else {
+                    args.plan_cmd.clone()
+                },
+                if args.act_cmd.is_empty() {
+                    Vec::new()
+                } else {
+                    args.act_cmd.clone()
+                },
+                if args.verify_cmd.is_empty() {
+                    vec![
+                        "cargo fmt --all --check".to_string(),
+                        "cargo check --all-targets".to_string(),
+                        "cargo test --all-targets".to_string(),
+                    ]
+                } else {
+                    args.verify_cmd.clone()
+                },
+                "openclaw",
+            )
+        }
     };
 
     let executor = ShellWorkExecutor {
@@ -899,6 +930,7 @@ async fn run_codegen_stage(
     ctx: &CycleContext,
     selected_task: Option<&FeatureTask>,
     user_prompt: Option<&str>,
+    preset: ExecutorPreset,
 ) -> StageResult {
     let stage_start = Instant::now();
 
@@ -920,6 +952,10 @@ async fn run_codegen_stage(
             }],
         };
     };
+
+    if matches!(preset, ExecutorPreset::OpenClaw) {
+        return run_openclaw_codegen_stage(ctx, selected_task, user_prompt).await;
+    }
 
     let repo_snapshot = match build_repo_snapshot(&ctx.repo_path, selected_task, user_prompt).await
     {
@@ -1039,6 +1075,327 @@ async fn run_codegen_stage(
         ),
         commands,
     }
+}
+
+async fn run_openclaw_codegen_stage(
+    ctx: &CycleContext,
+    selected_task: &FeatureTask,
+    user_prompt: Option<&str>,
+) -> StageResult {
+    let stage_start = Instant::now();
+
+    let repo_snapshot = match build_repo_snapshot(&ctx.repo_path, selected_task, user_prompt).await
+    {
+        Ok(snapshot) => snapshot,
+        Err(err) => {
+            let message = format!("failed to build repo snapshot for openclaw agent: {err}");
+            return StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(message.clone()),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "openclaw agent codegen".to_string(),
+                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: String::new(),
+                    stderr_tail: truncate_tail(&message),
+                    error: Some(message),
+                }],
+            };
+        }
+    };
+
+    let prompt = build_openclaw_codegen_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
+    let output = Command::new("openclaw")
+        .arg("agent")
+        .arg("--local")
+        .arg("--agent")
+        .arg("main")
+        .arg("--timeout")
+        .arg("240")
+        .arg("--json")
+        .arg("--message")
+        .arg(prompt)
+        .current_dir(&ctx.repo_path)
+        .output()
+        .await;
+
+    let output = match output {
+        Ok(out) => out,
+        Err(err) => {
+            let message = format!("failed to execute openclaw agent: {err}");
+            return StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(message.clone()),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "openclaw agent --local --agent main".to_string(),
+                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: String::new(),
+                    stderr_tail: truncate_tail(&message),
+                    error: Some(message),
+                }],
+            };
+        }
+    };
+
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        let message = format!(
+            "openclaw agent exited with {}: {}",
+            output.status,
+            truncate_tail(&stderr_text)
+        );
+        return StageResult {
+            stage: WorkStage::Act,
+            success: false,
+            error: Some(message.clone()),
+            commands: vec![CommandExecution {
+                stage: WorkStage::Act,
+                command: "openclaw agent --local --agent main".to_string(),
+                argv: vec!["openclaw".to_string(), "agent".to_string()],
+                success: false,
+                exit_code: output.status.code(),
+                duration_ms: stage_start.elapsed().as_millis() as u64,
+                stdout_tail: truncate_tail(&stdout_text),
+                stderr_tail: truncate_tail(&stderr_text),
+                error: Some(message),
+            }],
+        };
+    }
+
+    let payload =
+        extract_openclaw_payload_text(&stdout_text).unwrap_or_else(|| stdout_text.clone());
+    let proposal = match extract_diff_or_json_edits(&payload) {
+        Some(proposal) => proposal,
+        None => {
+            let message =
+                "openclaw agent response did not contain unified diff or json edits".to_string();
+            return StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(message.clone()),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "openclaw agent --local --agent main".to_string(),
+                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: truncate_tail(&payload),
+                    stderr_tail: truncate_tail(&stderr_text),
+                    error: Some(message),
+                }],
+            };
+        }
+    };
+
+    let applier = GitApplyDiffApplier;
+    let apply = match applier.apply_diff(&ctx.repo_path, &proposal).await {
+        Ok(result) => result,
+        Err(err) => {
+            let message = format!("failed to apply openclaw-generated diff: {err}");
+            return StageResult {
+                stage: WorkStage::Act,
+                success: false,
+                error: Some(message.clone()),
+                commands: vec![CommandExecution {
+                    stage: WorkStage::Act,
+                    command: "openclaw agent --local --agent main".to_string(),
+                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: truncate_tail(&payload),
+                    stderr_tail: truncate_tail(&message),
+                    error: Some(message),
+                }],
+            };
+        }
+    };
+
+    let success = apply.applied && !apply.changed_files.is_empty();
+    let detail = if success {
+        format!(
+            "openclaw agent diff applied touching {} files",
+            apply.changed_files.len()
+        )
+    } else {
+        format!(
+            "openclaw agent returned unapplied/empty diff: {}",
+            apply.detail
+        )
+    };
+
+    StageResult {
+        stage: WorkStage::Act,
+        success,
+        error: if success { None } else { Some(detail.clone()) },
+        commands: vec![CommandExecution {
+            stage: WorkStage::Act,
+            command: "openclaw agent --local --agent main".to_string(),
+            argv: vec!["openclaw".to_string(), "agent".to_string()],
+            success,
+            exit_code: Some(if success { 0 } else { 1 }),
+            duration_ms: stage_start.elapsed().as_millis() as u64,
+            stdout_tail: truncate_tail(
+                &json!({
+                    "changed_files": apply.changed_files,
+                    "apply_detail": apply.detail,
+                })
+                .to_string(),
+            ),
+            stderr_tail: if success {
+                String::new()
+            } else {
+                truncate_tail(&detail)
+            },
+            error: if success { None } else { Some(detail) },
+        }],
+    }
+}
+
+fn build_openclaw_codegen_prompt(
+    ctx: &CycleContext,
+    selected_task: &FeatureTask,
+    user_prompt: Option<&str>,
+    repo_snapshot: &str,
+) -> String {
+    let user_prompt = user_prompt.unwrap_or("");
+    format!(
+        "You are coding inside a git repository. Apply task-focused edits only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nReturn ONLY one of:\n1) A valid unified git diff beginning with 'diff --git'\nOR\n2) Compact JSON object {{\"edits\":[{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]}}\n\nRules:\n- No markdown fences, no commentary.\n- Keep changes minimal and useful.\n- Prefer src/ code + tests; avoid docs-only edits unless task is docs.\n- Ensure patch applies cleanly.",
+        cycle = ctx.cycle,
+        task = selected_task.title,
+        source = selected_task.source,
+        line = selected_task.selected_line,
+        user_prompt = user_prompt,
+        snapshot = repo_snapshot,
+    )
+}
+
+fn extract_openclaw_payload_text(stdout: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(stdout).ok()?;
+    let payloads = value.get("payloads")?.as_array()?;
+    let first = payloads.first()?;
+    first
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+fn extract_diff_or_json_edits(payload: &str) -> Option<CodeDiffProposal> {
+    if let Some(patch) = extract_unified_diff(payload) {
+        let touched_files = extract_touched_files(&patch);
+        return Some(CodeDiffProposal {
+            summary: format!(
+                "openclaw agent generated patch touching {} files",
+                touched_files.len()
+            ),
+            unified_diff: patch,
+            touched_files,
+        });
+    }
+
+    if let Some((paths, sentinel)) = extract_json_edits_payload(payload) {
+        return Some(CodeDiffProposal {
+            summary: format!(
+                "openclaw agent generated json edits touching {} files",
+                paths.len()
+            ),
+            unified_diff: sentinel,
+            touched_files: paths,
+        });
+    }
+
+    None
+}
+
+fn extract_unified_diff(message: &str) -> Option<String> {
+    let trimmed = message.trim();
+
+    if let Some(start) = trimmed.find("```diff") {
+        let rest = &trimmed[start + 7..];
+        if let Some(end) = rest.find("```") {
+            return sanitize_unified_diff(&rest[..end]);
+        }
+    }
+
+    if let Some(start) = trimmed.find("diff --git") {
+        return sanitize_unified_diff(&trimmed[start..]);
+    }
+
+    None
+}
+
+fn sanitize_unified_diff(raw: &str) -> Option<String> {
+    let mut lines = raw.lines().map(str::trim_end).collect::<Vec<_>>();
+
+    let first_diff = lines
+        .iter()
+        .position(|line| line.starts_with("diff --git "))?;
+    let mut normalized = lines.split_off(first_diff);
+
+    while matches!(normalized.last(), Some(last) if last.trim().is_empty() || last.trim() == "```")
+    {
+        normalized.pop();
+    }
+
+    Some(normalized.join("\n"))
+}
+
+fn extract_json_edits_payload(message: &str) -> Option<(Vec<String>, String)> {
+    let trimmed = message.trim();
+
+    let json_candidate = if trimmed.starts_with("```") {
+        let start = trimmed.find('{')?;
+        let end = trimmed.rfind('}')?;
+        &trimmed[start..=end]
+    } else {
+        trimmed
+    };
+
+    let payload: serde_json::Value = serde_json::from_str(json_candidate).ok()?;
+    let edits = payload.get("edits")?.as_array()?;
+    if edits.is_empty() {
+        return None;
+    }
+
+    let mut paths = Vec::new();
+    for edit in edits {
+        let path = edit.get("path")?.as_str()?.trim();
+        let content = edit.get("content")?.as_str()?;
+        if path.is_empty() || path.starts_with('/') || path.contains("..") || content.is_empty() {
+            return None;
+        }
+        paths.push(path.to_string());
+    }
+
+    paths.sort();
+    paths.dedup();
+
+    let sentinel = format!("HARNESS_JSON_EDITS\n{}", payload);
+    Some((paths, sentinel))
+}
+
+fn extract_touched_files(diff: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    for line in diff.lines() {
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            files.push(path.trim().to_string());
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
 }
 
 fn build_code_task(
@@ -1325,6 +1682,7 @@ async fn run_cycle_hooks(
         cycle,
         repo_path: repo_path.to_path_buf(),
         user_prompt: user_prompt.map(ToOwned::to_owned),
+        selected_task: selected_task.cloned(),
     };
 
     let mut dirty = repo_dirty(repo_path)
@@ -2909,6 +3267,7 @@ mod tests {
             cycle: 1,
             repo_path: dir.path().to_path_buf(),
             user_prompt: None,
+            selected_task: None,
         };
         let stage =
             run_stage_commands(WorkStage::Act, &["echo hi".to_string()], &ctx, &policy).await;

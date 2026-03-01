@@ -80,6 +80,7 @@ agent-harness gate start --checklist ./fixtures/gate_checklist.done.md --dry-run
 agent-harness gate status
 agent-harness code --repo /path/to/repo --time 1h
 agent-harness code --repo . --time 45m --executor shell --allow-cmd ls --plan-cmd "git status --short" --act-cmd "ls -la" --verify-cmd "git diff --stat"
+agent-harness code --repo . --time 1h --executor openclaw --prompt "implement feature X with tests"
 agent-harness code --repo . --time 1h --prompt "optional session prompt"
 agent-harness replay --path ./runs/events.jsonl
 agent-harness replay --path ./runs/events.jsonl --latest-run
@@ -122,6 +123,9 @@ Default "run as-is" settings target Codex 5.3 via OpenAI Responses API:
 - `HARNESS_MODEL=gpt-5.3-codex`
 
 `echo` / `http-stub` are useful for scaffolding, but they will not generate meaningful code patches.
+
+If you want the coding step to call OpenClaw itself, use `--executor openclaw`.
+In that mode, the feature stage calls `openclaw agent --local --agent main --json` with the selected task + repo snapshot and expects either a unified diff (`diff --git`) or JSON file edits payload.
 
 ## Dogfood workflow (harness-on-harness)
 

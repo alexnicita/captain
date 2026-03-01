@@ -532,8 +532,9 @@ fn parse_executor_preset(input: &str) -> Result<ExecutorPreset> {
     match input {
         "shell" => Ok(ExecutorPreset::Shell),
         "cargo" => Ok(ExecutorPreset::Cargo),
+        "openclaw" => Ok(ExecutorPreset::OpenClaw),
         other => Err(anyhow!(
-            "invalid --executor '{other}' (expected 'shell' or 'cargo')"
+            "invalid --executor '{other}' (expected 'shell', 'cargo', or 'openclaw')"
         )),
     }
 }

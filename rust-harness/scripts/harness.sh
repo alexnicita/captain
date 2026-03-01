@@ -33,7 +33,7 @@ Required:
   --time                Duration (e.g. 3600, 45m, 1h)
 
 Optional:
-  --executor            cargo|shell (default: cargo)
+  --executor            cargo|shell|openclaw (default: cargo)
   --heartbeat-sec       Coding heartbeat interval (default: 30)
   --cycle-pause-sec     Pause between cycles in seconds (default: 2)
   --prompt              Optional user-session prompt string
