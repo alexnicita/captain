@@ -1109,24 +1109,10 @@ async fn run_openclaw_codegen_stage(
     };
 
     let prompt = build_openclaw_codegen_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
-    let output = Command::new("openclaw")
-        .arg("agent")
-        .arg("--local")
-        .arg("--agent")
-        .arg("main")
-        .arg("--timeout")
-        .arg("240")
-        .arg("--json")
-        .arg("--message")
-        .arg(prompt)
-        .current_dir(&ctx.repo_path)
-        .output()
-        .await;
-
-    let output = match output {
-        Ok(out) => out,
+    let (payload, stderr_text) = match run_openclaw_agent_once(&ctx.repo_path, &prompt).await {
+        Ok(result) => result,
         Err(err) => {
-            let message = format!("failed to execute openclaw agent: {err}");
+            let message = err.to_string();
             return StageResult {
                 stage: WorkStage::Act,
                 success: false,
@@ -1145,36 +1131,6 @@ async fn run_openclaw_codegen_stage(
             };
         }
     };
-
-    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        let message = format!(
-            "openclaw agent exited with {}: {}",
-            output.status,
-            truncate_tail(&stderr_text)
-        );
-        return StageResult {
-            stage: WorkStage::Act,
-            success: false,
-            error: Some(message.clone()),
-            commands: vec![CommandExecution {
-                stage: WorkStage::Act,
-                command: "openclaw agent --local --agent main".to_string(),
-                argv: vec!["openclaw".to_string(), "agent".to_string()],
-                success: false,
-                exit_code: output.status.code(),
-                duration_ms: stage_start.elapsed().as_millis() as u64,
-                stdout_tail: truncate_tail(&stdout_text),
-                stderr_tail: truncate_tail(&stderr_text),
-                error: Some(message),
-            }],
-        };
-    }
-
-    let payload =
-        extract_openclaw_payload_text(&stdout_text).unwrap_or_else(|| stdout_text.clone());
     let proposal = match extract_diff_or_json_edits(&payload) {
         Some(proposal) => proposal,
         None => {
@@ -1200,7 +1156,7 @@ async fn run_openclaw_codegen_stage(
     };
 
     let applier = GitApplyDiffApplier;
-    let apply = match applier.apply_diff(&ctx.repo_path, &proposal).await {
+    let mut apply = match applier.apply_diff(&ctx.repo_path, &proposal).await {
         Ok(result) => result,
         Err(err) => {
             let message = format!("failed to apply openclaw-generated diff: {err}");
@@ -1223,12 +1179,51 @@ async fn run_openclaw_codegen_stage(
         }
     };
 
+    let mut used_json_retry = false;
+    if (!apply.applied || apply.changed_files.is_empty())
+        && !proposal.unified_diff.starts_with("HARNESS_JSON_EDITS\n")
+    {
+        let json_prompt =
+            build_openclaw_json_only_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
+        if let Ok((retry_payload, retry_err)) =
+            run_openclaw_agent_once(&ctx.repo_path, &json_prompt).await
+        {
+            if let Some(retry_proposal) =
+                extract_json_edits_payload(&retry_payload).map(|(paths, sentinel)| {
+                    CodeDiffProposal {
+                        summary: format!(
+                            "openclaw json-retry edits touching {} files",
+                            paths.len()
+                        ),
+                        unified_diff: sentinel,
+                        touched_files: paths,
+                    }
+                })
+            {
+                if let Ok(retry_apply) = applier.apply_diff(&ctx.repo_path, &retry_proposal).await {
+                    if retry_apply.applied && !retry_apply.changed_files.is_empty() {
+                        apply = retry_apply;
+                        used_json_retry = true;
+                    }
+                }
+            }
+            let _ = retry_err;
+        }
+    }
+
     let success = apply.applied && !apply.changed_files.is_empty();
     let detail = if success {
-        format!(
-            "openclaw agent diff applied touching {} files",
-            apply.changed_files.len()
-        )
+        if used_json_retry {
+            format!(
+                "openclaw agent json-retry applied touching {} files",
+                apply.changed_files.len()
+            )
+        } else {
+            format!(
+                "openclaw agent diff applied touching {} files",
+                apply.changed_files.len()
+            )
+        }
     } else {
         format!(
             "openclaw agent returned unapplied/empty diff: {}",
@@ -1264,6 +1259,36 @@ async fn run_openclaw_codegen_stage(
     }
 }
 
+async fn run_openclaw_agent_once(repo_path: &Path, prompt: &str) -> Result<(String, String)> {
+    let output = Command::new("openclaw")
+        .arg("agent")
+        .arg("--local")
+        .arg("--agent")
+        .arg("main")
+        .arg("--timeout")
+        .arg("240")
+        .arg("--json")
+        .arg("--message")
+        .arg(prompt)
+        .current_dir(repo_path)
+        .output()
+        .await
+        .context("failed to execute openclaw agent")?;
+
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(anyhow!(
+            "openclaw agent exited with {}: {}",
+            output.status,
+            truncate_tail(&stderr_text)
+        ));
+    }
+
+    let payload = extract_openclaw_payload_text(&stdout_text).unwrap_or(stdout_text);
+    Ok((payload, stderr_text))
+}
+
 fn build_openclaw_codegen_prompt(
     ctx: &CycleContext,
     selected_task: &FeatureTask,
@@ -1273,6 +1298,24 @@ fn build_openclaw_codegen_prompt(
     let user_prompt = user_prompt.unwrap_or("");
     format!(
         "You are coding inside a git repository. Apply task-focused edits only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nReturn ONLY one of:\n1) A valid unified git diff beginning with 'diff --git'\nOR\n2) Compact JSON object {{\"edits\":[{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]}}\n\nRules:\n- No markdown fences, no commentary.\n- Keep changes minimal and useful.\n- Prefer src/ code + tests; avoid docs-only edits unless task is docs.\n- Ensure patch applies cleanly.",
+        cycle = ctx.cycle,
+        task = selected_task.title,
+        source = selected_task.source,
+        line = selected_task.selected_line,
+        user_prompt = user_prompt,
+        snapshot = repo_snapshot,
+    )
+}
+
+fn build_openclaw_json_only_prompt(
+    ctx: &CycleContext,
+    selected_task: &FeatureTask,
+    user_prompt: Option<&str>,
+    repo_snapshot: &str,
+) -> String {
+    let user_prompt = user_prompt.unwrap_or("");
+    format!(
+        "Retry with strict JSON edits only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nReturn ONLY compact JSON object {{\"edits\":[{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]}}.\nNo markdown fences. No commentary. No unified diff.",
         cycle = ctx.cycle,
         task = selected_task.title,
         source = selected_task.source,
