@@ -81,6 +81,12 @@ PROMPT_HASH="$(printf "%s" "$PROMPT" | sha256sum | awk '{print $1}')"
 DURATION_SECONDS_ESTIMATE="$(estimate_duration_seconds "$DURATION")"
 GIT_BRANCH="$(git branch --show-current 2>/dev/null || echo unknown)"
 GIT_HEAD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+RETRY_OF="$(find "$CAPTURE_DIR" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
+if [[ "$RETRY_OF" == "$RUN_CAPTURE_DIR" ]]; then
+  RETRY_OF=""
+fi
+ATTEMPT_INDEX="$(( $(find "$CAPTURE_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') + 1 ))"
+INVOCATION_ARGS_JSON="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
 cat > "$META_FILE" <<EOF
 {
   "run_ts": "$RUN_TS",
@@ -90,6 +96,9 @@ cat > "$META_FILE" <<EOF
   "prompt_hash": "$PROMPT_HASH",
   "git_branch": "$GIT_BRANCH",
   "git_head": "$GIT_HEAD",
+  "retry_of": $(if [[ -n "$RETRY_OF" ]]; then printf '"%s"' "$RETRY_OF"; else printf 'null'; fi),
+  "attempt_index": $ATTEMPT_INDEX,
+  "invocation_args": $INVOCATION_ARGS_JSON,
   "start_epoch": $START_EPOCH,
   "start_iso": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "dry_run": $DRY_RUN,
