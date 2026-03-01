@@ -75,6 +75,30 @@ Live monitoring:
 tail -F ./runs/console.log ./runs/runtime.log
 ```
 
+## Discriminator prompt capture run
+
+Use this utility to run harness and capture per-cycle OpenClaw prompt artifacts + ACT summaries.
+
+```bash
+scripts/discriminator-capture-run.sh 10m
+```
+
+Options:
+
+```bash
+scripts/discriminator-capture-run.sh --dry-run
+scripts/discriminator-capture-run.sh 10m --no-clean
+```
+
+Capture output directory:
+- `.harness/discriminator-captures/<timestamp>/`
+
+Key files:
+- `metadata.json` (start/end/exit/run_id/duration/prompt_hash)
+- `act-summaries.jsonl` (append-only ACT prompt/result pairing)
+- copied prompt files (`cycle-*-attempt-*.prompt.txt`)
+- `console.log`, `runtime-capture.log`, `thoughts-capture.md`, `events.jsonl`
+
 Coding mode guarantees the phase order each cycle:
 
 `architecture -> feature -> conformance -> cleanup -> pause`

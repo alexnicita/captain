@@ -8,15 +8,17 @@ DURATION="10m"
 PROMPT="${HARNESS_PROMPT:-10-minute discriminator prompt capture run}"
 CAPTURE_DIR="${CAPTURE_DIR:-$ROOT_DIR/.harness/discriminator-captures}"
 DRY_RUN=0
+NO_CLEAN=0
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/discriminator-capture-run.sh [duration] [--dry-run]
+Usage: scripts/discriminator-capture-run.sh [duration] [--dry-run] [--no-clean]
 
 Examples:
   scripts/discriminator-capture-run.sh
   scripts/discriminator-capture-run.sh 30m
   scripts/discriminator-capture-run.sh --dry-run
+  scripts/discriminator-capture-run.sh 10m --no-clean
 USAGE
 }
 
@@ -28,6 +30,9 @@ for arg in "$@"; do
       ;;
     --dry-run)
       DRY_RUN=1
+      ;;
+    --no-clean)
+      NO_CLEAN=1
       ;;
     *)
       DURATION="$arg"
@@ -46,6 +51,20 @@ require_cmd cargo
 require_cmd jq
 require_cmd bash
 
+estimate_duration_seconds() {
+  local raw="$1"
+  if [[ "$raw" =~ ^([0-9]+)s$ ]]; then
+    echo "${BASH_REMATCH[1]}"; return
+  elif [[ "$raw" =~ ^([0-9]+)m$ ]]; then
+    echo "$(( ${BASH_REMATCH[1]} * 60 ))"; return
+  elif [[ "$raw" =~ ^([0-9]+)h$ ]]; then
+    echo "$(( ${BASH_REMATCH[1]} * 3600 ))"; return
+  elif [[ "$raw" =~ ^[0-9]+$ ]]; then
+    echo "$raw"; return
+  fi
+  echo "null"
+}
+
 mkdir -p "$CAPTURE_DIR"
 RUN_TS="$(date -u +%Y%m%d-%H%M%S)"
 RUN_CAPTURE_DIR="$CAPTURE_DIR/$RUN_TS"
@@ -54,17 +73,23 @@ mkdir -p "$RUN_CAPTURE_DIR"
 META_FILE="$RUN_CAPTURE_DIR/metadata.json"
 SEEN_FILE="$RUN_CAPTURE_DIR/.seen"
 ACT_FILE="$RUN_CAPTURE_DIR/act-summaries.jsonl"
+ACT_SEEN_FILE="$RUN_CAPTURE_DIR/.act-seen"
 RUNTIME_STDOUT="$RUN_CAPTURE_DIR/console.log"
 
 START_EPOCH="$(date -u +%s)"
+PROMPT_HASH="$(printf "%s" "$PROMPT" | sha256sum | awk '{print $1}')"
+DURATION_SECONDS_ESTIMATE="$(estimate_duration_seconds "$DURATION")"
 cat > "$META_FILE" <<EOF
 {
   "run_ts": "$RUN_TS",
   "duration": "$DURATION",
+  "duration_seconds_estimate": $DURATION_SECONDS_ESTIMATE,
   "prompt": "${PROMPT//"/\"}",
+  "prompt_hash": "$PROMPT_HASH",
   "start_epoch": $START_EPOCH,
   "start_iso": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "dry_run": $DRY_RUN,
+  "no_clean": $NO_CLEAN,
   "run_id": null,
   "exit_code": null,
   "end_epoch": null,
@@ -75,18 +100,24 @@ EOF
 echo "[capture] run duration=$DURATION"
 echo "[capture] prompt=$PROMPT"
 echo "[capture] output=$RUN_CAPTURE_DIR"
+echo "[capture] no_clean=$NO_CLEAN"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "[capture] dry-run OK (prereqs + paths verified)"
   exit 0
 fi
 
-# Start from a clean runtime state.
-rm -f .git/.agent-harness-code.lock
-rm -rf .harness/supercycle runs
-mkdir -p runs
+# Start from a clean runtime state unless no-clean mode is requested.
+if [[ "$NO_CLEAN" == "0" ]]; then
+  rm -f .git/.agent-harness-code.lock
+  rm -rf .harness/supercycle runs
+  mkdir -p runs
+else
+  mkdir -p runs
+fi
 
 touch "$SEEN_FILE"
+touch "$ACT_SEEN_FILE"
 : > "$ACT_FILE"
 
 export HARNESS_PROVIDER="${HARNESS_PROVIDER:-http}"
@@ -172,8 +203,14 @@ capture_act_summaries() {
         prompt_path: (((.data.commands // [])[0].stdout_tail // "") | fromjson? | .prompt_path // null),
         apply_detail: (((.data.commands // [])[0].stdout_tail // "") | fromjson? | .apply_detail // null)
       }
-  ' runs/events.jsonl 2>/dev/null > "$ACT_FILE.tmp" || true
-  mv "$ACT_FILE.tmp" "$ACT_FILE" 2>/dev/null || true
+  ' runs/events.jsonl 2>/dev/null | while read -r line; do
+    [[ -z "$line" ]] && continue
+    key="$(printf "%s" "$line" | sha256sum | awk '{print $1}')"
+    if ! grep -Fxq "$key" "$ACT_SEEN_FILE"; then
+      echo "$key" >> "$ACT_SEEN_FILE"
+      echo "$line" >> "$ACT_FILE"
+    fi
+  done
 }
 
 while kill -0 "$HARNESS_PID" >/dev/null 2>&1; do
