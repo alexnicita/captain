@@ -27,6 +27,7 @@ const OPENCLAW_ATTEMPTS_PER_CYCLE: usize = 1;
 const OPENCLAW_PLAN_TIMEOUT_SEC: u64 = 240;
 const OPENCLAW_CODE_TIMEOUT_SEC: u64 = 600;
 const DIFF_RUBRIC_REJECTION_STREAK_LIMIT: u64 = 3;
+const PRECOMMIT_GATE_SKIP_STREAK_LIMIT: u64 = 2;
 const COMMIT_WATCHDOG_SEC: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -470,6 +471,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let mut counters = EventCounters::default();
     let mut last_commit_ok_epoch = start_epoch;
     let mut diff_rubric_rejection_streak = 0u64;
+    let mut precommit_gate_skip_streak = 0u64;
 
     while gate.is_active_at(now_unix()) {
         let now = now_unix();
@@ -767,7 +769,20 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             diff_rubric_rejection_streak = 0;
         }
 
-        if diff_rubric_rejection_streak >= DIFF_RUBRIC_REJECTION_STREAK_LIMIT {
+        let precommit_gate_skipped = verify_result
+            .error
+            .as_deref()
+            .map(|e| e.contains("pre-commit eligibility gate"))
+            .unwrap_or(false);
+        if precommit_gate_skipped {
+            precommit_gate_skip_streak = precommit_gate_skip_streak.saturating_add(1);
+        } else {
+            precommit_gate_skip_streak = 0;
+        }
+
+        if diff_rubric_rejection_streak >= DIFF_RUBRIC_REJECTION_STREAK_LIMIT
+            || precommit_gate_skip_streak >= PRECOMMIT_GATE_SKIP_STREAK_LIMIT
+        {
             let reset_detail = run_dirty_tree_recovery(&repo_path)
                 .await
                 .unwrap_or_else(|e| format!("dirty-tree recovery failed: {e}"));
@@ -778,11 +793,13 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                         "cycle": cycles_total,
                         "warning": "dirty-tree spin detected; forced reset + fresh re-architecture",
                         "recovery": reset_detail,
-                        "streak": diff_rubric_rejection_streak,
+                        "diff_rubric_streak": diff_rubric_rejection_streak,
+                        "precommit_gate_streak": precommit_gate_skip_streak,
                     })),
             )?;
 
             diff_rubric_rejection_streak = 0;
+            precommit_gate_skip_streak = 0;
             progress_memory.repeated_no_diff_task_id = None;
             progress_memory.repeated_no_diff_cycles = 0;
             save_progress_memory(&progress_path, &progress_memory)?;
