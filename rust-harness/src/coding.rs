@@ -1419,8 +1419,9 @@ fn build_openclaw_json_only_prompt_with_attempt(
 ) -> String {
     let user_prompt = user_prompt.unwrap_or("");
     let previous_error = previous_error.unwrap_or("");
+    let nrp = load_nrp_protocol(&ctx.repo_path);
     format!(
-        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/3\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
+        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/3\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
         cycle = ctx.cycle,
         attempt = attempt,
         task = selected_task.title,
@@ -1429,7 +1430,28 @@ fn build_openclaw_json_only_prompt_with_attempt(
         user_prompt = user_prompt,
         previous_error = previous_error,
         snapshot = repo_snapshot,
+        nrp = nrp,
     )
+}
+
+fn load_nrp_protocol(repo_path: &Path) -> String {
+    let candidates = [repo_path.join("docs/NRP.md"), repo_path.join("AGENTS.md")];
+
+    for path in candidates {
+        if let Ok(content) = fs::read_to_string(&path) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                let max = 4000usize;
+                return if trimmed.len() > max {
+                    format!("{}...", &trimmed[..max])
+                } else {
+                    trimmed.to_string()
+                };
+            }
+        }
+    }
+
+    "(no NRP/AGENTS protocol file found)".to_string()
 }
 
 fn extract_openclaw_payload_text(stdout: &str) -> Option<String> {

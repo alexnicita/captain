@@ -103,7 +103,8 @@ cargo run -- eval --path ./runs/events.jsonl --run-id run-123
 Shortcut coding launch (OpenClaw executor):
 
 ```bash
-cargo run -- "implement feature X with tests"
+cargo run -- start
+cargo run -- start --prompt "implement feature X with tests"
 ```
 
 This is equivalent to running coding mode with defaults:
@@ -173,6 +174,16 @@ agent-harness code --repo /path/to/repo --time 1h \
   --noop-streak-limit 3 --conformance-interval-unchanged 3 \
   --commit-each-cycle --push-each-cycle \
   --runtime-log-file ./runs/coding-runtime.log
+```
+
+Supercycle mode (architecture remap + task graph + task pack artifacts under `.harness/supercycle/`):
+
+```bash
+agent-harness code --repo /path/to/repo --time 20m --supercycle \
+  --heartbeat-sec 30 --cycle-pause-sec 2 \
+  --noop-streak-limit 3 --conformance-interval-unchanged 3 \
+  --commit-each-cycle --push-each-cycle \
+  --runtime-log-file ./runs/coding-runtime-supercycle.log
 ```
 
 ## Safety notes for coding mode
