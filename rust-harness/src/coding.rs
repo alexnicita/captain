@@ -1472,50 +1472,42 @@ async fn run_openclaw_codegen_stage(
     }
 }
 
-async fn run_exa_research_once(repo_path: &Path, prompt: &str, timeout_sec: u64) -> Result<String> {
-    let api_key = std::env::var("EXA_API_KEY").context("EXA_API_KEY not set")?;
+async fn run_parallel_research_once(
+    repo_path: &Path,
+    prompt: &str,
+    _timeout_sec: u64,
+) -> Result<String> {
+    let api_key = std::env::var("PARALLEL_API_KEY").context("PARALLEL_API_KEY not set")?;
     let query = truncate_tail(prompt);
-    let payload = json!({
-        "query": query,
-        "numResults": 5,
-        "type": "auto",
-        "contents": {
-            "text": true,
-            "highlights": {
-                "numSentences": 2,
-                "highlightsPerUrl": 3
-            }
-        }
-    });
 
-    let output = Command::new("curl")
-        .arg("-sS")
-        .arg("--max-time")
-        .arg(timeout_sec.to_string())
-        .arg("-H")
-        .arg("Content-Type: application/json")
-        .arg("-H")
-        .arg(format!("x-api-key: {api_key}"))
-        .arg("-d")
-        .arg(payload.to_string())
-        .arg("https://api.exa.ai/search")
+    let output = Command::new("node")
+        .arg("/home/ec2-user/.openclaw/workspace/tools/parallel-search.js")
+        .arg("--query")
+        .arg(&query)
+        .arg("--count")
+        .arg("5")
+        .arg("--mode")
+        .arg("one-shot")
+        .arg("--max-chars")
+        .arg("700")
+        .env("PARALLEL_API_KEY", api_key)
         .current_dir(repo_path)
         .output()
         .await
-        .context("failed to execute exa search curl")?;
+        .context("failed to execute parallel-search.js")?;
 
     if !output.status.success() {
         return Err(anyhow!(
-            "exa search failed with {}: {}",
+            "parallel search failed with {}: {}",
             output.status,
             truncate_tail(&String::from_utf8_lossy(&output.stderr))
         ));
     }
 
     let body = String::from_utf8_lossy(&output.stdout).to_string();
-    let parsed: Value =
-        serde_json::from_str(&body).map_err(|e| anyhow!("exa response parse failed: {e}"))?;
-    let mut out = String::from("# EXA_RESEARCH\n\n");
+    let parsed: Value = serde_json::from_str(&body)
+        .map_err(|e| anyhow!("parallel search response parse failed: {e}"))?;
+    let mut out = String::from("# PARALLEL_RESEARCH\n\n");
     if let Some(results) = parsed.get("results").and_then(Value::as_array) {
         for (idx, item) in results.iter().enumerate() {
             let title = item
@@ -1526,15 +1518,14 @@ async fn run_exa_research_once(repo_path: &Path, prompt: &str, timeout_sec: u64)
                 .get("url")
                 .and_then(Value::as_str)
                 .unwrap_or("(no url)");
-            out.push_str(&format!("## Result {}: {}\n{}\n", idx + 1, title, url));
-            if let Some(text) = item.get("text").and_then(Value::as_str) {
-                out.push_str(&format!("{}\n\n", truncate_tail(text)));
-            } else if let Some(highlights) = item.get("highlights").and_then(Value::as_array) {
-                for hl in highlights.iter().filter_map(Value::as_str).take(3) {
-                    out.push_str(&format!("- {}\n", hl));
-                }
-                out.push('\n');
-            }
+            let snippet = item.get("snippet").and_then(Value::as_str).unwrap_or("");
+            out.push_str(&format!(
+                "## Result {}: {}\n{}\n{}\n\n",
+                idx + 1,
+                title,
+                url,
+                truncate_tail(snippet)
+            ));
         }
     }
     Ok(out)
@@ -2816,14 +2807,14 @@ async fn run_supercycle_planning(
 
     let research_doc = if research_budget_sec > 0 {
         let timeout_sec = research_budget_sec.clamp(30, 600);
-        if std::env::var("EXA_API_KEY")
+        if std::env::var("PARALLEL_API_KEY")
             .ok()
             .filter(|s| !s.trim().is_empty())
             .is_some()
         {
-            match run_exa_research_once(repo_path, &research_prompt, timeout_sec).await {
+            match run_parallel_research_once(repo_path, &research_prompt, timeout_sec).await {
                 Ok(text) if !text.trim().is_empty() => text,
-                Ok(_) => "(exa research returned empty output)".to_string(),
+                Ok(_) => "(parallel research returned empty output)".to_string(),
                 Err(err) => {
                     let session_id = format!("harness-research-{cycle}");
                     match run_openclaw_agent_text_once(
@@ -2835,11 +2826,11 @@ async fn run_supercycle_planning(
                     .await
                     {
                         Ok(text) if !text.trim().is_empty() => {
-                            format!("(exa fallback: {err})\n\n{text}")
+                            format!("(parallel fallback: {err})\n\n{text}")
                         }
-                        Ok(_) => format!("(exa failed: {err}; openclaw fallback empty)"),
+                        Ok(_) => format!("(parallel failed: {err}; openclaw fallback empty)"),
                         Err(err2) => {
-                            format!("(research phase failed: exa={err}; openclaw={err2})")
+                            format!("(research phase failed: parallel={err}; openclaw={err2})")
                         }
                     }
                 }
