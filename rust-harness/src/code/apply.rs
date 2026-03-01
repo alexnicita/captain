@@ -122,6 +122,14 @@ async fn apply_json_edits(repo_path: &Path, sentinel: &str) -> Result<CodeApplyR
         }
 
         let abs = repo_path.join(path);
+        if let Some(reason) = destructive_edit_reason(path, content, &abs)? {
+            return Ok(CodeApplyResult {
+                applied: false,
+                changed_files: Vec::new(),
+                detail: format!("destructive json edit rejected for {path}: {reason}"),
+            });
+        }
+
         if let Some(parent) = abs.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -160,6 +168,38 @@ async fn apply_json_edits(repo_path: &Path, sentinel: &str) -> Result<CodeApplyR
         changed_files: staged,
         detail: "applied json file edits and staged with git add".to_string(),
     })
+}
+
+fn destructive_edit_reason(path: &str, content: &str, abs: &Path) -> Result<Option<String>> {
+    let trimmed = content.trim();
+    let lower = trimmed.to_ascii_lowercase();
+
+    if lower.contains("... existing") || lower.contains("placeholder") {
+        return Ok(Some(
+            "placeholder/materialization text detected".to_string(),
+        ));
+    }
+
+    if path.starts_with("src/") {
+        if !content.contains("fn ") && !content.contains("mod ") && !content.contains("use ") {
+            return Ok(Some(
+                "src/ edit does not appear to contain real Rust code markers".to_string(),
+            ));
+        }
+
+        if abs.exists() {
+            let existing = fs::read_to_string(abs)?;
+            let old_len = existing.len();
+            let new_len = content.len();
+            if old_len > 200 && new_len * 4 < old_len {
+                return Ok(Some(format!(
+                    "content shrink too large (old={old_len}, new={new_len})"
+                )));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 fn write_patch(repo_path: &Path, patch: &str) -> Result<PathBuf> {
