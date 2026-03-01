@@ -139,7 +139,7 @@ Default "run as-is" settings target Codex 5.3 via OpenAI Responses API:
 `echo` / `http-stub` are useful for scaffolding, but they will not generate meaningful code patches.
 
 If you want the coding step to call OpenClaw itself, use `--executor openclaw`.
-In that mode, the feature stage calls `openclaw agent --local --agent main --json` with the selected task + repo snapshot and expects either a unified diff (`diff --git`) or JSON file edits payload.
+In that mode, the feature stage calls `openclaw agent --local --agent main --json` with selected task + repo snapshot and enforces a strict JSON edit contract (`rationale`, `acceptance_checks`, `edits`) with adaptive retries.
 
 ## Dogfood workflow (harness-on-harness)
 
@@ -208,6 +208,16 @@ Cleanup logs include git sync outcomes each cycle:
 - `conflict_resolution`: unresolved conflict status
 - `commit` summary
 - `push` outcome
+
+## Coding replay quality eval
+
+After a coding run:
+
+```bash
+python3 ./scripts/eval_coding_run.py ./runs/events.jsonl <run_id>
+```
+
+It outputs cycle/act/commit metrics and a simple `quality_score_100` so regressions are easy to spot.
 
 ## Troubleshooting quick hits (coding mode)
 

@@ -275,7 +275,12 @@ impl WorkExecutor for ShellWorkExecutor {
     }
 
     async fn verify(&self, ctx: &CycleContext) -> StageResult {
-        run_stage_commands(WorkStage::Verify, &self.verify_cmd, ctx, &self.policy).await
+        let commands = if self.verify_cmd.is_empty() {
+            derive_verify_commands(ctx)
+        } else {
+            self.verify_cmd.clone()
+        };
+        run_stage_commands(WorkStage::Verify, &commands, ctx, &self.policy).await
     }
 }
 
@@ -882,11 +887,7 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
                     args.act_cmd.clone()
                 },
                 if args.verify_cmd.is_empty() {
-                    vec![
-                        "cargo fmt --all".to_string(),
-                        "cargo check --all-targets".to_string(),
-                        "cargo test --all-targets".to_string(),
-                    ]
+                    Vec::new()
                 } else {
                     args.verify_cmd.clone()
                 },
@@ -1108,18 +1109,28 @@ async fn run_openclaw_codegen_stage(
         }
     };
 
-    let prompt = build_openclaw_json_only_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
-    let (payload, stderr_text) = match run_openclaw_agent_once(&ctx.repo_path, &prompt).await {
-        Ok(result) => result,
-        Err(err) => {
-            let message = err.to_string();
-            return StageResult {
-                stage: WorkStage::Act,
-                success: false,
-                error: Some(message.clone()),
-                commands: vec![CommandExecution {
+    let applier = GitApplyDiffApplier;
+    let mut attempts = Vec::new();
+    let mut last_error: Option<String> = None;
+
+    for attempt in 1..=3 {
+        let prompt = build_openclaw_json_only_prompt_with_attempt(
+            ctx,
+            selected_task,
+            user_prompt,
+            &repo_snapshot,
+            attempt,
+            last_error.as_deref(),
+        );
+
+        let (payload, stderr_text) = match run_openclaw_agent_once(&ctx.repo_path, &prompt).await {
+            Ok(result) => result,
+            Err(err) => {
+                let message = err.to_string();
+                last_error = Some(message.clone());
+                attempts.push(CommandExecution {
                     stage: WorkStage::Act,
-                    command: "openclaw agent --local --agent main".to_string(),
+                    command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
                     argv: vec!["openclaw".to_string(), "agent".to_string()],
                     success: false,
                     exit_code: Some(1),
@@ -1127,51 +1138,46 @@ async fn run_openclaw_codegen_stage(
                     stdout_tail: String::new(),
                     stderr_tail: truncate_tail(&message),
                     error: Some(message),
-                }],
-            };
-        }
-    };
-    let proposal =
-        match extract_json_edits_payload(&payload).map(|(paths, sentinel)| CodeDiffProposal {
-            summary: format!("openclaw agent json edits touching {} files", paths.len()),
-            unified_diff: sentinel,
-            touched_files: paths,
+                });
+                continue;
+            }
+        };
+
+        let proposal = match extract_json_edits_payload(&payload).map(|(paths, sentinel)| {
+            CodeDiffProposal {
+                summary: format!("openclaw agent json edits touching {} files", paths.len()),
+                unified_diff: sentinel,
+                touched_files: paths,
+            }
         }) {
             Some(proposal) => proposal,
             None => {
                 let message =
                     "openclaw agent response did not contain valid json edits payload".to_string();
-                return StageResult {
+                last_error = Some(message.clone());
+                attempts.push(CommandExecution {
                     stage: WorkStage::Act,
+                    command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
+                    argv: vec!["openclaw".to_string(), "agent".to_string()],
                     success: false,
-                    error: Some(message.clone()),
-                    commands: vec![CommandExecution {
-                        stage: WorkStage::Act,
-                        command: "openclaw agent --local --agent main".to_string(),
-                        argv: vec!["openclaw".to_string(), "agent".to_string()],
-                        success: false,
-                        exit_code: Some(1),
-                        duration_ms: stage_start.elapsed().as_millis() as u64,
-                        stdout_tail: truncate_tail(&payload),
-                        stderr_tail: truncate_tail(&stderr_text),
-                        error: Some(message),
-                    }],
-                };
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: truncate_tail(&payload),
+                    stderr_tail: truncate_tail(&stderr_text),
+                    error: Some(message),
+                });
+                continue;
             }
         };
 
-    let applier = GitApplyDiffApplier;
-    let apply = match applier.apply_diff(&ctx.repo_path, &proposal).await {
-        Ok(result) => result,
-        Err(err) => {
-            let message = format!("failed to apply openclaw-generated diff: {err}");
-            return StageResult {
-                stage: WorkStage::Act,
-                success: false,
-                error: Some(message.clone()),
-                commands: vec![CommandExecution {
+        let apply = match applier.apply_diff(&ctx.repo_path, &proposal).await {
+            Ok(result) => result,
+            Err(err) => {
+                let message = format!("failed to apply openclaw-generated json edits: {err}");
+                last_error = Some(message.clone());
+                attempts.push(CommandExecution {
                     stage: WorkStage::Act,
-                    command: "openclaw agent --local --agent main".to_string(),
+                    command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
                     argv: vec!["openclaw".to_string(), "agent".to_string()],
                     success: false,
                     exit_code: Some(1),
@@ -1179,31 +1185,27 @@ async fn run_openclaw_codegen_stage(
                     stdout_tail: truncate_tail(&payload),
                     stderr_tail: truncate_tail(&message),
                     error: Some(message),
-                }],
-            };
-        }
-    };
+                });
+                continue;
+            }
+        };
 
-    let success = apply.applied && !apply.changed_files.is_empty();
-    let detail = if success {
-        format!(
-            "openclaw agent json edits applied touching {} files",
-            apply.changed_files.len()
-        )
-    } else {
-        format!(
-            "openclaw agent returned unapplied/empty json edits: {}",
-            apply.detail
-        )
-    };
+        let success = apply.applied && !apply.changed_files.is_empty();
+        let detail = if success {
+            format!(
+                "openclaw agent json edits applied touching {} files",
+                apply.changed_files.len()
+            )
+        } else {
+            format!(
+                "openclaw agent returned unapplied/empty json edits: {}",
+                apply.detail
+            )
+        };
 
-    StageResult {
-        stage: WorkStage::Act,
-        success,
-        error: if success { None } else { Some(detail.clone()) },
-        commands: vec![CommandExecution {
+        attempts.push(CommandExecution {
             stage: WorkStage::Act,
-            command: "openclaw agent --local --agent main".to_string(),
+            command: format!("openclaw agent --local --agent main (attempt {attempt}/3)"),
             argv: vec!["openclaw".to_string(), "agent".to_string()],
             success,
             exit_code: Some(if success { 0 } else { 1 }),
@@ -1220,8 +1222,28 @@ async fn run_openclaw_codegen_stage(
             } else {
                 truncate_tail(&detail)
             },
-            error: if success { None } else { Some(detail) },
-        }],
+            error: if success { None } else { Some(detail.clone()) },
+        });
+
+        if success {
+            return StageResult {
+                stage: WorkStage::Act,
+                success: true,
+                error: None,
+                commands: attempts,
+            };
+        }
+
+        last_error = Some(detail);
+    }
+
+    StageResult {
+        stage: WorkStage::Act,
+        success: false,
+        error: Some(
+            last_error.unwrap_or_else(|| "openclaw json codegen failed after retries".to_string()),
+        ),
+        commands: attempts,
     }
 }
 
@@ -1255,20 +1277,25 @@ async fn run_openclaw_agent_once(repo_path: &Path, prompt: &str) -> Result<(Stri
     Ok((payload, stderr_text))
 }
 
-fn build_openclaw_json_only_prompt(
+fn build_openclaw_json_only_prompt_with_attempt(
     ctx: &CycleContext,
     selected_task: &FeatureTask,
     user_prompt: Option<&str>,
     repo_snapshot: &str,
+    attempt: usize,
+    previous_error: Option<&str>,
 ) -> String {
     let user_prompt = user_prompt.unwrap_or("");
+    let previous_error = previous_error.unwrap_or("");
     format!(
-        "Retry with strict JSON edits only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nReturn ONLY compact JSON object {{\"edits\":[{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]}}.\nNo markdown fences. No commentary. No unified diff.",
+        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/3\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nRepository snapshot:\n{snapshot}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
         cycle = ctx.cycle,
+        attempt = attempt,
         task = selected_task.title,
         source = selected_task.source,
         line = selected_task.selected_line,
         user_prompt = user_prompt,
+        previous_error = previous_error,
         snapshot = repo_snapshot,
     )
 }
@@ -1295,6 +1322,21 @@ fn extract_json_edits_payload(message: &str) -> Option<(Vec<String>, String)> {
     };
 
     let payload: serde_json::Value = serde_json::from_str(json_candidate).ok()?;
+    let rationale = payload.get("rationale")?.as_str()?.trim();
+    if rationale.is_empty() {
+        return None;
+    }
+    let acceptance_checks = payload.get("acceptance_checks")?.as_array()?;
+    if acceptance_checks.is_empty() {
+        return None;
+    }
+    if !acceptance_checks
+        .iter()
+        .all(|v| v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false))
+    {
+        return None;
+    }
+
     let edits = payload.get("edits")?.as_array()?;
     if edits.is_empty() {
         return None;
@@ -1512,6 +1554,27 @@ fn default_cargo_commands() -> DefaultCommands {
         ],
         verify: vec!["cargo test --all-targets".to_string()],
     }
+}
+
+fn derive_verify_commands(ctx: &CycleContext) -> Vec<String> {
+    let mut commands = vec!["cargo fmt --all".to_string()];
+
+    if let Some(task) = ctx.selected_task.as_ref() {
+        if task.source.starts_with("src/") {
+            let module = task
+                .source
+                .trim_start_matches("src/")
+                .trim_end_matches(".rs")
+                .replace('/', "::");
+            if !module.is_empty() {
+                commands.push(format!("cargo test --all-targets {module}"));
+            }
+        }
+    }
+
+    commands.push("cargo check --all-targets".to_string());
+    commands.push("cargo test --all-targets".to_string());
+    commands
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1865,6 +1928,31 @@ async fn run_cycle_hooks(
         return Ok(hooks);
     }
 
+    if !passes_commit_diff_rubric(repo_path, &staged_meaningful, selected_task).await {
+        let detail = "commit rejected by diff rubric (scope/size/relevance)".to_string();
+        hooks.push(HookResult {
+            name: "commit".to_string(),
+            success: false,
+            skipped: true,
+            detail: detail.clone(),
+        });
+        emit_git_commit_event(
+            sink, cycle_id, cycle, false, true, None, None, "rejected", &detail,
+        )?;
+        emit_git_push_event(
+            sink,
+            cycle_id,
+            cycle,
+            false,
+            true,
+            None,
+            None,
+            "blocked",
+            "push skipped because commit diff failed rubric",
+        )?;
+        return Ok(hooks);
+    }
+
     let commit_kind = infer_commit_kind(repo_path, args.user_prompt.as_deref()).await;
     let mut subject = summarize_commit_focus(repo_path, args.user_prompt.as_deref()).await;
     if commit_subject_is_generic(&subject)
@@ -2171,8 +2259,15 @@ fn select_next_feature_task_from_docs(
 
     ranked
         .iter()
-        .find(|candidate| candidate.cooldown_remaining == 0 || escalate_source)
+        .filter(|candidate| candidate.cooldown_remaining == 0 || escalate_source)
+        .find(|candidate| candidate.score >= 420 && candidate.impact >= 5)
         .map(|candidate| candidate.task.clone())
+        .or_else(|| {
+            ranked
+                .iter()
+                .find(|candidate| candidate.cooldown_remaining == 0 || escalate_source)
+                .map(|candidate| candidate.task.clone())
+        })
         .or_else(|| ranked.first().map(|candidate| candidate.task.clone()))
 }
 
@@ -2210,6 +2305,7 @@ fn rank_task_candidates(
 
         let impact = task_impact_score(&task);
         let novelty = task_novelty_score(&task, progress, &history);
+        let feasibility = task_feasibility_score(repo_path, &task);
         let cooldown_penalty = (cooldown_remaining as i64) * 120;
         let repeat_penalty = (history.selected_count as i64) * 18;
         let fallback_bonus = if task.id.starts_with("fallback::") {
@@ -2222,7 +2318,7 @@ fn rank_task_candidates(
         } else {
             0
         };
-        let score = impact * 100 + novelty + fallback_bonus
+        let score = impact * 100 + novelty + feasibility * 25 + fallback_bonus
             - cooldown_penalty
             - repeat_penalty
             - docs_penalty;
@@ -2392,6 +2488,20 @@ fn task_novelty_score(
     }
 
     score - (history.selected_count as i64 * 4)
+}
+
+fn task_feasibility_score(repo_path: &Path, task: &FeatureTask) -> i64 {
+    let mut score = 0;
+    if task.source.starts_with("src/") {
+        score += 2;
+    }
+    if repo_path.join(&task.source).exists() {
+        score += 2;
+    }
+    if task.title.len() <= 120 {
+        score += 1;
+    }
+    score
 }
 
 fn task_impact_score(task: &FeatureTask) -> i64 {
@@ -2840,6 +2950,59 @@ fn commit_has_meaningful_scope(files: &[String], selected_task: Option<&FeatureT
     }
 
     false
+}
+
+async fn passes_commit_diff_rubric(
+    repo_path: &Path,
+    staged_files: &[String],
+    selected_task: Option<&FeatureTask>,
+) -> bool {
+    if staged_files.is_empty() {
+        return false;
+    }
+
+    let output = Command::new("git")
+        .arg("diff")
+        .arg("--cached")
+        .arg("--numstat")
+        .current_dir(repo_path)
+        .output()
+        .await;
+
+    let Ok(output) = output else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+
+    let mut touched = 0u64;
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut parts = line.split_whitespace();
+        let add = parts
+            .next()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        let del = parts
+            .next()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0);
+        touched = touched.saturating_add(add + del);
+    }
+
+    if touched < 4 {
+        return false;
+    }
+
+    if let Some(task) = selected_task {
+        if task.source.starts_with("src/") {
+            return staged_files
+                .iter()
+                .any(|f| f == &task.source || f.starts_with("src/"));
+        }
+    }
+
+    staged_files.iter().any(|f| f.starts_with("src/"))
 }
 
 async fn infer_commit_kind(repo_path: &Path, user_prompt: Option<&str>) -> String {
