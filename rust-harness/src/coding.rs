@@ -2216,6 +2216,10 @@ async fn run_architecture_phase(
         });
     }
 
+    if !force_mutation {
+        let _ = ensure_roadmap_seed_tasks(repo_path);
+    }
+
     let selected_task = if force_mutation {
         select_forced_code_change_task(progress, cycle)
     } else {
@@ -2335,8 +2339,59 @@ fn rank_task_candidates(
     ranked
 }
 
+fn ensure_roadmap_seed_tasks(repo_path: &Path) -> Result<()> {
+    let seed = [
+        "- [ ] Improve coding reliability in src/coding.rs with targeted tests",
+        "- [ ] Strengthen task ranking quality in src/coding.rs",
+        "- [ ] Harden commit quality rubric and scope checks",
+    ];
+
+    let roadmap_path = repo_path.join("ROADMAP.md");
+    let runbook_path = repo_path.join("RUNBOOK.md");
+
+    if !roadmap_path.exists() {
+        let mut body = String::from("# ROADMAP\n\n## Auto-seeded tasks\n");
+        for line in seed {
+            body.push_str(line);
+            body.push('\n');
+        }
+        fs::write(&roadmap_path, body)?;
+    } else {
+        let content = fs::read_to_string(&roadmap_path).unwrap_or_default();
+        if !has_actionable_task_lines(&content) {
+            let mut body = content;
+            if !body.ends_with('\n') {
+                body.push('\n');
+            }
+            body.push_str("\n## Auto-seeded tasks\n");
+            for line in seed {
+                body.push_str(line);
+                body.push('\n');
+            }
+            fs::write(&roadmap_path, body)?;
+        }
+    }
+
+    if !runbook_path.exists() {
+        let body = "# RUNBOOK\n\n## Coding loop notes\n- Keep tasks scoped to src/ and tests\n- Reject non-meaningful diffs\n";
+        fs::write(&runbook_path, body)?;
+    }
+
+    Ok(())
+}
+
+fn has_actionable_task_lines(content: &str) -> bool {
+    content.lines().map(str::trim).any(looks_like_roadmap_task)
+}
+
 fn collect_doc_tasks(repo_path: &Path, escalate_source: bool) -> Vec<FeatureTask> {
-    let primary = ["ARCHITECTURE.md", "README.md", "RUNBOOK.md", "MIGRATION.md"];
+    let primary = [
+        "ARCHITECTURE.md",
+        "ROADMAP.md",
+        "README.md",
+        "RUNBOOK.md",
+        "MIGRATION.md",
+    ];
     let fallback_only = ["CONTRIBUTING.md"];
 
     let mut files = primary.to_vec();
