@@ -1,3 +1,0 @@
-- [x] initialize run
-- [x] execute loop
-- [x] verify completion gate

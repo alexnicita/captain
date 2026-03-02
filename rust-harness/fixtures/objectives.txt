@@ -1,4 +1,0 @@
-[p1] what time is it
-summarize the previous tool output
-# comment lines are ignored
-[p0] check completion criteria

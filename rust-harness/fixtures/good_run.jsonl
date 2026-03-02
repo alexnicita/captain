@@ -1,7 +1,0 @@
-{"kind":"run.started","ts_unix":1700000000,"run_id":"run-fixture","seq":1,"data":{"mode":"run"}}
-{"kind":"task.started","ts_unix":1700000001,"run_id":"run-fixture","seq":2,"task_id":"task-fixture","data":{"objective":"check time"}}
-{"kind":"provider.request","ts_unix":1700000002,"run_id":"run-fixture","seq":3,"task_id":"task-fixture","data":{"step":1,"attempt":1}}
-{"kind":"provider.response","ts_unix":1700000003,"run_id":"run-fixture","seq":4,"task_id":"task-fixture","data":{"message":"ok","done":true,"tool_calls":0}}
-{"kind":"task.finished","ts_unix":1700000004,"run_id":"run-fixture","seq":5,"task_id":"task-fixture","data":{"reason":"provider_done"}}
-{"kind":"cli.run.summary","ts_unix":1700000005,"run_id":"run-fixture","seq":6,"task_id":"task-fixture","data":{"steps":1}}
-{"kind":"run.finished","ts_unix":1700000006,"run_id":"run-fixture","seq":7,"data":{"mode":"run"}}

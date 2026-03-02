@@ -1,3 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
-     Running `target/debug/rust-harness --config ./config.example.toml code --repo . --time 20s --prompt '10-minute discriminator prompt capture run' --executor openclaw --supercycle --research-budget-sec 120 --planning-budget-sec 30 --commit-each-cycle --push-each-cycle --noop-streak-limit 3 --conformance-interval-unchanged 3 --runtime-log-file ./runs/runtime-capture.log --thought-log-file ./runs/thoughts-capture.md`
-Error: unknown arg: --config
