@@ -238,7 +238,7 @@ async fn main() -> Result<()> {
 
         let mut score = 0i64;
         let mut next_prompt = user_prompt.clone();
-        let mut commit_now = cycle % cfg.commit_every == 0;
+        let mut commit_now = cfg.commit_every > 0 && cycle % cfg.commit_every == 0;
 
         if let Ok(disc_out) = run_openclaw(
             &disc_session,
