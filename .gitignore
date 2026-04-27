@@ -56,7 +56,7 @@ package-lock.json
 harnesses/hourly-harness/*.log
 /reports/
 /research-curation/
-/knowledge-base/assets/pdfs/
+/knowledge/assets/pdfs/
 
 # Local harness runtime config/secrets
 harnesses/rust-harness/config.local.toml

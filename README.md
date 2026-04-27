@@ -18,7 +18,7 @@ Use harnesses as policy + runtime control layers around autonomous agents:
 
 - `harnesses/hourly-harness/` — minimum-runtime + checklist gate harness
 - `harnesses/rust-harness/` — full Rust coding harness (timeboxed plan/act/verify loop)
-- `knowledge-base/` — curated business/operating research library
+- `knowledge/` — curated business/operating research library
 - `roadmap/backlog.md` — prioritized execution backlog
 - `private/` — local private zone (repos/secrets/notes), excluded from git
 - `scripts/setup-openclaw-captain.sh` — bootstrap OpenClaw + workspace + harness init
@@ -175,7 +175,7 @@ A readability-first map of the public scaffold.
 
 ### Strategy + planning
 
-- `knowledge-base/` — business and operating knowledge library
+- `knowledge/` — business and operating knowledge library
 - `roadmap/backlog.md` — prioritized task backlog
 
 ### Setup + operations

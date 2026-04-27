@@ -3,7 +3,7 @@
 This folder is the framework layer for governing autonomous coding behavior for **OpenClaw** and similar agent systems.
 
 Related scaffold at repo root:
-- `knowledge-base/` for strategic reference material
+- `knowledge/` for strategic reference material
 - `roadmap/backlog.md` for prioritized execution planning
 
 ## Included harnesses
