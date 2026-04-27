@@ -148,7 +148,13 @@ Run basic repo smoke tests:
 bash tests/run.sh
 ```
 
-Covers scaffold checks, script validation, and a short hourly-harness dry-run.
+Covers scaffold checks, script validation, Python pytest checks, hourly-harness dry-run, and Rust cargo tests.
+
+To force full rust-harness test run in the same command:
+
+```bash
+RUN_RUST_TESTS=1 bash tests/run.sh
+```
 
 ---
 

@@ -38,6 +38,11 @@ package-lock.json
 *.key
 *.p12
 
+# Python test/cache artifacts
+__pycache__/
+.pytest_cache/
+.coverage
+
 # Proprietary ConstantCoder code/worktrees (keep out of OSS repo)
 /cc/
 /cc-localhost-3000.png
