@@ -32,9 +32,27 @@ For a quick directory map, see `WORKSPACE_STRUCTURE.md`.
 git clone https://github.com/alexnicita/captain.git
 cd captain
 bash scripts/setup-openclaw-captain.sh
+bash scripts/init-local-profile.sh
 ```
 
 This sets up OpenClaw and initializes local harness files for `harnesses/rust-harness`.
+It also creates local personal markdown files from templates.
+
+## Personal markdown templates (gitignored local copies)
+
+Personal/operator files are local-only and ignored:
+
+- `AGENTS.md`, `HEARTBEAT.md`, `IDENTITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`, `MEMORY.md`
+
+Templates live in:
+
+- `templates/personal/*.template.md`
+
+Initialize local copies with:
+
+```bash
+bash scripts/init-local-profile.sh
+```
 
 ---
 

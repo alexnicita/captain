@@ -8,6 +8,14 @@ tmp_research/
 memory/
 MEMORY.md
 
+# Local operator profile markdowns (use templates/personal/*.template.md)
+AGENTS.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+
 # Private workspace zone (tracked docs only)
 private/*
 !private/README.md

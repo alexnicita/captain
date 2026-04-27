@@ -25,7 +25,8 @@ A readability-first map of the public scaffold.
 
 ## Agent persona/workspace context
 
-- `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`
+- `templates/personal/` — tracked templates for local persona/profile markdown files
+- local copies created via `scripts/init-local-profile.sh` and kept gitignored
 
 ## Local/private (intentionally excluded from OSS scope)
 
