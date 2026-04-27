@@ -8,7 +8,7 @@ tmp_research/
 memory/
 MEMORY.md
 
-# Local operator profile markdowns (use templates/personal/*.template.md)
+# Local operator profile markdowns (use captain/templates/personal/*.template.md)
 AGENTS.md
 HEARTBEAT.md
 IDENTITY.md
@@ -17,9 +17,9 @@ TOOLS.md
 USER.md
 
 # Private workspace zone (tracked docs only)
-private/*
-!private/README.md
-!private/.gitkeep
+captain/private/*
+!captain/private/README.md
+!captain/private/.gitkeep
 
 # Local-generated assets
 avatars/
@@ -48,27 +48,27 @@ __pycache__/
 /cc/
 /cc-localhost-3000.png
 /prompts/
-/scripts/cc_*.sh
-/scripts/commit_monitor.sh
-/scripts/cron_logger.sh
-/scripts/overnight-coding-watchdog.sh
-/scripts/overnight_worker_loop.sh
+/captain/scripts/cc_*.sh
+/captain/scripts/commit_monitor.sh
+/captain/scripts/cron_logger.sh
+/captain/scripts/overnight-coding-watchdog.sh
+/captain/scripts/overnight_worker_loop.sh
 /install-gh.sh
 /POSTMORTEM-*.md
 
 # Local ops output / logs / research artifacts
 *.log
 *.log.*
-harnesses/hourly-harness/*.log
+captain/harnesses/hourly-harness/*.log
 captain/src/hourly-harness/runs/
 captain/src/hourly-harness/checklist.test.md
 /reports/
 /research-curation/
-/knowledge/assets/pdfs/
+/captain/knowledge/assets/pdfs/
 
 # Local harness runtime config/secrets
-harnesses/rust-harness/config.local.toml
-harnesses/rust-harness/prompts/session-prompt.txt
+captain/harnesses/rust-harness/config.local.toml
+captain/harnesses/rust-harness/prompts/session-prompt.txt
 
 reports/overnight-coding-watchdog.log
 reports/overnight-coding-watchdog.nohup.log

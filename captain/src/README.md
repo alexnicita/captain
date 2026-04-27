@@ -17,4 +17,4 @@ These directories are intentionally documented before they are filled. They are 
 - `telemetry/` - event schemas, replay formats, and report renderers.
 - `tools/` - local helper implementations that are product code rather than repo scripts.
 
-When moving code, keep compatibility wrappers in `harnesses/` or `scripts/` until a documented migration exists.
+When moving code, keep compatibility wrappers in `captain/harnesses/` or `captain/scripts/` until a documented migration exists.

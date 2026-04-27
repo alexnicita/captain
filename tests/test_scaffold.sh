@@ -13,18 +13,32 @@ required_paths=(
   "captain/tests/README.md"
   "captain/tests/rust-harness/commit_subject_quality_gate_v2.rs"
   "captain/tests/hourly-harness/test_forced_hour_harness.py"
-  "harnesses/README.md"
-  "harnesses/hourly-harness/README.md"
-  "harnesses/rust-harness/README.md"
-  "knowledge/README.md"
-  "roadmap/backlog.md"
-  "private/README.md"
-  "templates/personal/AGENTS.template.md"
+  "captain/harnesses/README.md"
+  "captain/harnesses/hourly-harness/README.md"
+  "captain/harnesses/rust-harness/README.md"
+  "docs/captain/README.md"
+  "docs/captain/architecture/directory-map.md"
+  "docs/demo/90-second-demo.md"
+  "docs/examples/safe-pr-review.sh"
+  "captain/knowledge/README.md"
+  "captain/roadmap/backlog.md"
+  "captain/private/README.md"
+  "captain/templates/personal/AGENTS.template.md"
 )
 
 for p in "${required_paths[@]}"; do
   [[ -e "$p" ]] || { echo "missing required path: $p" >&2; exit 1; }
- done
+done
+
+expected_top_dirs="$(printf "captain\ndocs\ntests")"
+actual_top_dirs="$(
+  find . -maxdepth 1 -type d ! -name . ! -name .git -exec basename {} \; | sort
+)"
+if [[ "$actual_top_dirs" != "$expected_top_dirs" ]]; then
+  echo "unexpected top-level directories:" >&2
+  printf '%s\n' "$actual_top_dirs" >&2
+  exit 1
+fi
 
 # Personal files should be gitignored
 for p in AGENTS.md HEARTBEAT.md IDENTITY.md SOUL.md TOOLS.md USER.md MEMORY.md; do

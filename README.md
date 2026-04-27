@@ -19,14 +19,14 @@ The operating idea is simple: agents can work longer when the run has a flight r
 ```bash
 git clone https://github.com/alexnicita/captain.git
 cd captain
-bash scripts/setup-openclaw-captain.sh
-bash scripts/captain-doctor.sh
+bash captain/scripts/setup-openclaw-captain.sh
+bash captain/scripts/captain-doctor.sh
 ```
 
 Run a governed one-hour coding session:
 
 ```bash
-bash harnesses/rust-harness/scripts/harness.sh \
+bash captain/harnesses/rust-harness/scripts/harness.sh \
   --repo /path/to/target/repo \
   --time 1h \
   --executor openclaw \
@@ -36,7 +36,7 @@ bash harnesses/rust-harness/scripts/harness.sh \
 The canonical interface is intentionally stable:
 
 ```bash
-scripts/harness.sh --repo <path> --time <duration> --executor openclaw
+captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor openclaw
 ```
 
 ## Why This Exists
@@ -51,23 +51,25 @@ OpenClaw and similar agents make it easy to give a model real tools and persiste
 
 ## Project Layout
 
-- `captain/` - canonical product tree, with `src/`, `tests/`, `docs/`, and subsystem ownership metadata.
+- `captain/` - canonical product tree, with product source, compatibility entrypoints, skills, private workspace support, and subsystem ownership metadata.
+- `docs/` - public launch docs, examples, demos, and architecture notes.
+- `tests/` - repository-level smoke tests.
 - `captain/src/rust-harness/` - active Rust governance harness implementation.
 - `captain/src/hourly-harness/` - active Python runtime/checklist gate implementation.
 - `captain/tests/` - product tests referenced by Cargo/pytest.
-- `harnesses/rust-harness/` - stable Cargo/scripts compatibility layer for the Rust harness.
-- `harnesses/hourly-harness/` - stable CLI compatibility layer for the runtime/checklist gate.
-- `examples/` - copy-paste launch scenarios for PR review, one-hour sprints, and risky-change blocking.
-- `demo/90-second-demo.md` - launch demo script/storyboard.
-- `skills/` - OpenClaw-compatible skill packs, including Captain governance integration.
-- `templates/personal/` - local-only operator profile templates.
-- `knowledge/` - optional background material, not required for the Captain launch path.
-- `private/` - gitignored local zone for confidential repos, notes, and secrets.
+- `captain/harnesses/rust-harness/` - stable Cargo/scripts compatibility layer for the Rust harness.
+- `captain/harnesses/hourly-harness/` - stable CLI compatibility layer for the runtime/checklist gate.
+- `docs/examples/` - copy-paste launch scenarios for PR review, one-hour sprints, and risky-change blocking.
+- `docs/demo/90-second-demo.md` - launch demo script/storyboard.
+- `captain/skills/` - OpenClaw-compatible skill packs, including Captain governance integration.
+- `captain/templates/personal/` - local-only operator profile templates.
+- `captain/knowledge/` - optional background material, not required for the Captain launch path.
+- `captain/private/` - gitignored local zone for confidential repos, notes, and secrets.
 
 ## Requirements
 
 - Node.js 24 recommended, Node.js 22.14+ minimum.
-- Rust 1.76+ for `harnesses/rust-harness`.
+- Rust 1.76+ for `captain/harnesses/rust-harness`.
 - OpenClaw CLI for `--executor openclaw`.
 - A model credential via `OPENAI_API_KEY` or OpenClaw auth profiles.
 
@@ -82,13 +84,13 @@ bash tests/run.sh
 Run the full Rust suite:
 
 ```bash
-cargo test --manifest-path harnesses/rust-harness/Cargo.toml
+cargo test --manifest-path captain/harnesses/rust-harness/Cargo.toml
 ```
 
 Run stricter Rust checks:
 
 ```bash
-cd harnesses/rust-harness
+cd captain/harnesses/rust-harness
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
@@ -110,7 +112,7 @@ Each emitted event has a run id and monotonic sequence number stamped by `EventS
 Replay and evaluate a run:
 
 ```bash
-cd harnesses/rust-harness
+cd captain/harnesses/rust-harness
 cargo run -- replay --path ./runs/events.jsonl --latest-run
 cargo run -- eval --path ./runs/events.jsonl --latest-run
 ```
@@ -124,18 +126,18 @@ openclaw config set agents.defaults.workspace "$PWD"
 openclaw gateway restart
 ```
 
-The governance skill lives at `skills/captain-governance/SKILL.md`.
+The governance skill lives at `captain/skills/captain-governance/SKILL.md`.
 
 ## Security
 
 Captain is designed for local operator control, but governed agents still run real commands. Start from these defaults:
 
 - Keep secrets in `.env.local`, OpenClaw auth profiles, or another local secret store.
-- Keep confidential repos under `private/`.
+- Keep confidential repos under `captain/private/`.
 - Use command allowlists for non-default tools.
 - Review `runs/events.jsonl` before sharing any run artifact publicly.
 - Read `SECURITY.md` before exposing OpenClaw channels or remote access.
 
 ## Optional Knowledge Base
 
-The `knowledge/` folder contains optional business and operating-system research material. It is not part of Captain's core governance runtime and should not be required for new users to understand or run the product.
+The `captain/knowledge/` folder contains optional business and operating-system research material. It is not part of Captain's core governance runtime and should not be required for new users to understand or run the product.

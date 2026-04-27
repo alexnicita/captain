@@ -1,6 +1,6 @@
 # Captain Product Tree
 
-This directory is the canonical Captain product namespace. It separates product code, tests, and architecture docs from repository-level distribution files.
+This directory is the canonical Captain product namespace. It keeps implementation code, compatibility entrypoints, skills, private workspace support, and product tests under one top-level product tree.
 
 The shape borrows two ideas:
 
@@ -13,15 +13,20 @@ The shape borrows two ideas:
 captain/
   src/                 implementation code and subsystem adapters
   tests/               product test suites
-  docs/                architecture and process documentation
+  harnesses/           stable compatibility entrypoints
+  scripts/             setup, doctor, and operator scripts
+  skills/              OpenClaw-compatible governance packs
+  tools/               product-owned helper tools
+  templates/           local operator profile templates
+  private/             gitignored local-only workspace zone
   MAINTAINERS          ownership map for subsystems
 ```
 
-Compatibility entrypoints remain at the historical root paths:
+Compatibility entrypoints remain under the product tree:
 
-- `harnesses/rust-harness/Cargo.toml`
-- `harnesses/rust-harness/scripts/harness.sh`
-- `harnesses/hourly-harness/run.sh`
+- `captain/harnesses/rust-harness/Cargo.toml`
+- `captain/harnesses/rust-harness/scripts/harness.sh`
+- `captain/harnesses/hourly-harness/run.sh`
 - `tests/run.sh`
 
-That lets users keep existing commands while the codebase gains a cleaner top-level abstraction.
+That keeps the repository root strict while preserving stable, documented command surfaces.

@@ -20,10 +20,10 @@ Do not include API keys, auth profile contents, private repo paths, or unredacte
 ## Operator Defaults
 
 - Keep secrets in `.env.local`, OpenClaw auth profiles, or another local-only secret store.
-- Keep confidential repositories and notes under `private/`.
+- Keep confidential repositories and notes under `captain/private/`.
 - Review JSONL event logs before sharing them.
 - Use command allowlists for tools outside the default `cargo` and `git` policy.
-- Run `bash scripts/captain-doctor.sh` before launch demos or public screenshots.
+- Run `bash captain/scripts/captain-doctor.sh` before launch demos or public screenshots.
 
 ## OpenClaw Channel Safety
 

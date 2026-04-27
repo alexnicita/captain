@@ -11,5 +11,5 @@ def test_personal_files_are_gitignored():
 
 
 def test_private_zone_exists():
-    assert (ROOT / "private" / "README.md").exists()
-    assert (ROOT / "private" / ".gitkeep").exists()
+    assert (ROOT / "captain" / "private" / "README.md").exists()
+    assert (ROOT / "captain" / "private" / ".gitkeep").exists()

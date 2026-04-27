@@ -6,10 +6,10 @@ Blocks completion until BOTH:
 2) all checklist items are marked complete
 
 Usage examples:
-  python3 harnesses/hourly-harness/forced_hour_harness.py run --checklist harnesses/hourly-harness/checklist.md
-  python3 harnesses/hourly-harness/forced_hour_harness.py status
-  python3 harnesses/hourly-harness/forced_hour_harness.py stop
-  python3 harnesses/hourly-harness/forced_hour_harness.py run --checklist harnesses/hourly-harness/checklist.md --dry-run
+  python3 captain/harnesses/hourly-harness/forced_hour_harness.py run --checklist captain/harnesses/hourly-harness/checklist.md
+  python3 captain/harnesses/hourly-harness/forced_hour_harness.py status
+  python3 captain/harnesses/hourly-harness/forced_hour_harness.py stop
+  python3 captain/harnesses/hourly-harness/forced_hour_harness.py run --checklist captain/harnesses/hourly-harness/checklist.md --dry-run
 """
 
 from __future__ import annotations

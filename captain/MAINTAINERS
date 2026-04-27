@@ -22,12 +22,12 @@ Required checks: `RUN_RUST_TESTS=1 bash tests/run.sh`.
 
 ## Compatibility Entrypoints
 
-Path: `harnesses/`, `scripts/`, `tests/`
+Path: `captain/harnesses/`, `captain/scripts/`, `tests/`
 Role: Stable public command paths and release tooling.
 Required checks: script syntax and smoke tests.
 
 ## Documentation And Launch Surface
 
-Path: `README.md`, `captain/docs/`, `demo/`, `examples/`, `skills/`
+Path: `README.md`, `docs/`, `captain/skills/`
 Role: Public positioning, launch demos, OpenClaw integration, and copy-paste operating examples.
 Required checks: docs stay consistent with the stable command surface.

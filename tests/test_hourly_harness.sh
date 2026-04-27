@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT/harnesses/hourly-harness"
+cd "$ROOT/captain/harnesses/hourly-harness"
 
 CHECKLIST="checklist.test.md"
 cat > "$CHECKLIST" <<'MD'

@@ -4,7 +4,7 @@ Captain product tests live here.
 
 ```text
 captain/tests/
-  rust-harness/       Cargo integration tests referenced from harnesses/rust-harness/Cargo.toml
+  rust-harness/       Cargo integration tests referenced from captain/harnesses/rust-harness/Cargo.toml
   hourly-harness/     pytest suite for the forced-runtime harness
 ```
 

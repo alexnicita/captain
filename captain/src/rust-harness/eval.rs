@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn eval_passes_good_fixture() {
         let summary = replay_str(include_str!(
-            "../../../harnesses/rust-harness/fixtures/good_run.jsonl"
+            "../../harnesses/rust-harness/fixtures/good_run.jsonl"
         ))
         .unwrap();
         let report = evaluate_replay(&summary);
@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn eval_fails_bad_fixture() {
         let summary = replay_str(include_str!(
-            "../../../harnesses/rust-harness/fixtures/bad_run_missing_finish.jsonl"
+            "../../harnesses/rust-harness/fixtures/bad_run_missing_finish.jsonl"
         ))
         .unwrap();
         let report = evaluate_replay(&summary);

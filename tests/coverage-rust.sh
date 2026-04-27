@@ -11,7 +11,7 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
 fi
 
 cargo llvm-cov \
-  --manifest-path harnesses/rust-harness/Cargo.toml \
+  --manifest-path captain/harnesses/rust-harness/Cargo.toml \
   --all-features \
   --workspace \
   --summary-only \

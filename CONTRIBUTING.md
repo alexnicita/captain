@@ -5,15 +5,15 @@ Captain should remain reusable, local-first, and governance-focused.
 ## Development Loop
 
 ```bash
-bash scripts/captain-doctor.sh
+bash captain/scripts/captain-doctor.sh
 bash tests/run.sh
-cargo test --manifest-path harnesses/rust-harness/Cargo.toml
+cargo test --manifest-path captain/harnesses/rust-harness/Cargo.toml
 ```
 
 For Rust changes:
 
 ```bash
-cd harnesses/rust-harness
+cd captain/harnesses/rust-harness
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
