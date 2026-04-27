@@ -7,6 +7,8 @@ REPO_NAME="${REPO_NAME:-captain}"
 TARGET_DIR="${TARGET_DIR:-$INSTALL_DIR/$REPO_NAME}"
 OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
 SKIP_OPENCLAW_INSTALL="${SKIP_OPENCLAW_INSTALL:-0}"
+INIT_HARNESS="${INIT_HARNESS:-1}"
+UPDATE_OPENCLAW_WORKSPACE="${UPDATE_OPENCLAW_WORKSPACE:-1}"
 
 usage() {
   cat <<'EOF'
@@ -20,10 +22,13 @@ Options:
   --repo-name <name>       Repo folder name (default: captain)
   --config-path <path>     OpenClaw config path (default: ~/.openclaw/openclaw.json)
   --skip-openclaw-install  Don't install OpenClaw if missing
+  --no-init-harness        Skip rust-harness local init
+  --no-config-update       Do not run 'openclaw config set' for workspace
   -h, --help               Show help
 
 Environment variables supported:
-  REPO_URL, INSTALL_DIR, TARGET_DIR, REPO_NAME, OPENCLAW_CONFIG, SKIP_OPENCLAW_INSTALL
+  REPO_URL, INSTALL_DIR, TARGET_DIR, REPO_NAME, OPENCLAW_CONFIG,
+  SKIP_OPENCLAW_INSTALL, INIT_HARNESS, UPDATE_OPENCLAW_WORKSPACE
 EOF
 }
 
@@ -41,6 +46,10 @@ while [[ $# -gt 0 ]]; do
       OPENCLAW_CONFIG="$2"; shift 2 ;;
     --skip-openclaw-install)
       SKIP_OPENCLAW_INSTALL=1; shift ;;
+    --no-init-harness)
+      INIT_HARNESS=0; shift ;;
+    --no-config-update)
+      UPDATE_OPENCLAW_WORKSPACE=0; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -106,6 +115,19 @@ fi
 
 echo "[5/6] Sanity checks..."
 openclaw status || true
+
+if [[ "$UPDATE_OPENCLAW_WORKSPACE" == "1" ]]; then
+  echo "[5b/6] Setting OpenClaw workspace to $TARGET_DIR ..."
+  if ! openclaw config set agents.defaults.workspace "$TARGET_DIR"; then
+    echo "Warning: failed to update workspace via 'openclaw config set'." >&2
+    echo "Set manually with: openclaw config set agents.defaults.workspace \"$TARGET_DIR\"" >&2
+  fi
+fi
+
+if [[ "$INIT_HARNESS" == "1" ]]; then
+  echo "[5c/6] Initializing rust-harness local files..."
+  bash "$TARGET_DIR/scripts/setup-harness-env.sh" || true
+fi
 
 cat <<EOF
 

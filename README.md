@@ -1,22 +1,25 @@
-# captain
+# captain (OpenClaw Harness Workspace)
 
-Public starter workspace for running a proactive OpenClaw operator agent.
+This repo is a ready-to-clone workspace for running the **Rust harness** (`rust-harness/`) with OpenClaw.
 
-This repo gives you:
-- Agent identity + behavior files (`SOUL.md`, `AGENTS.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`)
-- Automation helpers (`scripts/`)
-- A starter knowledge base + harness examples
+It includes:
+- a production-style harness runner (`rust-harness/start.sh`)
+- canonical timeboxed runner (`rust-harness/scripts/harness.sh`)
+- bootstrap scripts to set up OpenClaw + harness local files
 
 ---
 
-## Quick start (recommended)
+## What the harness does
 
-### 1) Install prerequisites
-- Git
-- Node.js **v20+** (v22 recommended)
-- npm
+The harness runs a timeboxed coding loop with explicit phases (architecture → feature → conformance → cleanup → pause), event logs, and optional commit/push-per-cycle behavior.
 
-### 2) Clone + bootstrap
+Primary entrypoints:
+- `rust-harness/start.sh` → fast default for coding runs
+- `rust-harness/scripts/harness.sh --repo <path> --time <duration>` → canonical interface
+
+---
+
+## One-command setup (recommended)
 
 ```bash
 git clone https://github.com/alexnicita/captain.git
@@ -24,50 +27,37 @@ cd captain
 bash scripts/setup-openclaw-captain.sh
 ```
 
-This script will:
-- verify prerequisites
-- install `openclaw` globally if missing
-- keep the repo updated
-- create `~/.openclaw/openclaw.json` if it does not exist (and point workspace to this repo)
-
-### 3) Run OpenClaw onboarding
-
-```bash
-openclaw onboard
-```
-
-Use this to configure:
-- model providers (OpenAI/Anthropic/etc)
-- channels (Telegram/Signal/Discord/etc)
-- pairing/allowlist policy
-
-### 4) Verify runtime
-
-```bash
-openclaw status
-openclaw config get agents.defaults.workspace
-```
-
-Expected workspace value:
-- your local clone path for this repo
-
-### 5) Open Control UI
-
-```text
-http://127.0.0.1:18789
-```
+This will:
+1. verify/install OpenClaw
+2. clone/update workspace
+3. create `~/.openclaw/openclaw.json` if missing
+4. set `agents.defaults.workspace` to this repo
+5. initialize harness local files:
+   - `rust-harness/config.local.toml`
+   - `rust-harness/.env.local`
+   - `rust-harness/prompts/session-prompt.txt`
+   - `rust-harness/runs/`
 
 ---
 
-## Manual setup (no helper script)
+## Add this harness to OpenClaw
+
+### Option A (auto via setup script)
+Already handled by `scripts/setup-openclaw-captain.sh` using:
 
 ```bash
-npm install -g openclaw
-mkdir -p ~/.openclaw/workspace
-git clone https://github.com/alexnicita/captain.git ~/.openclaw/workspace/captain
+openclaw config set agents.defaults.workspace <this-repo-path>
 ```
 
-Create `~/.openclaw/openclaw.json`:
+### Option B (manual)
+
+```bash
+openclaw config set agents.defaults.workspace ~/.openclaw/workspace/captain
+openclaw gateway restart
+openclaw config get agents.defaults.workspace
+```
+
+If you prefer direct file edit, `~/.openclaw/openclaw.json` should include:
 
 ```json5
 {
@@ -79,65 +69,52 @@ Create `~/.openclaw/openclaw.json`:
 }
 ```
 
-Then run:
+---
+
+## Configure credentials for harness runs
+
+Edit local-only env file:
 
 ```bash
-openclaw onboard
-openclaw status
+nano rust-harness/.env.local
+```
+
+Set at minimum:
+
+```bash
+OPENAI_API_KEY=your_key_here
+```
+
+Then load it for your shell session:
+
+```bash
+set -a
+source rust-harness/.env.local
+set +a
 ```
 
 ---
 
-## Configure this workspace for yourself
-
-Before using in production, personalize these files:
-
-1. `IDENTITY.md` — your agent name/persona
-2. `USER.md` — who you are helping
-3. `SOUL.md` — communication style and boundaries
-4. `TOOLS.md` — machine-specific notes (SSH hosts, stack prefs, etc.)
-5. `HEARTBEAT.md` — proactive checks/tasks
-
-Optional:
-- `MEMORY.md` and `memory/YYYY-MM-DD.md` for persistent context
-
----
-
-## Suggested first-run commands
+## First run
 
 ```bash
-# validate config + runtime health
-openclaw doctor
-openclaw status
+cd rust-harness
+./scripts/check_toolchain.sh
+./start.sh 1h
+```
 
-# inspect key config
-openclaw config get agents.defaults.workspace
+Alternative (explicit canonical runner):
 
-# restart gateway after config updates
-openclaw gateway restart
+```bash
+./scripts/harness.sh --repo . --time 45m --prompt-file ./prompts/session-prompt.txt
 ```
 
 ---
 
-## Security notes for open-sourcing your own fork
-
-- Do **not** commit secrets (`.env`, API keys, local tokens).
-- Keep local/private memory files out of git.
-- Review channel allowlists before enabling external messaging.
-- Run a final check before making your repo public:
-
-```bash
-git status
-git log --oneline -n 10
-```
-
----
-
-## Script reference
+## Script guide
 
 ### `scripts/setup-openclaw-captain.sh`
-
-Usage:
+Bootstrap OpenClaw + workspace + harness local files.
 
 ```bash
 bash scripts/setup-openclaw-captain.sh [options]
@@ -150,20 +127,46 @@ Options:
 - `--repo-name <name>`
 - `--config-path <path>`
 - `--skip-openclaw-install`
+- `--no-init-harness`
+- `--no-config-update`
 
-Example custom install:
+### `scripts/setup-harness-env.sh`
+Initialize just harness local runtime files.
 
 ```bash
-bash scripts/setup-openclaw-captain.sh \
-  --repo-url https://github.com/<you>/captain.git \
-  --target-dir ~/work/captain \
-  --config-path ~/.openclaw/openclaw.json
+bash scripts/setup-harness-env.sh [--harness-dir <path>]
 ```
 
 ---
 
-## OpenClaw docs
+## OpenClaw verification commands
 
-- Local docs: `/home/ec2-user/.npm-global/lib/node_modules/openclaw/docs`
-- Online docs: https://docs.openclaw.ai
-- Source: https://github.com/openclaw/openclaw
+```bash
+openclaw status
+openclaw doctor
+openclaw config get agents.defaults.workspace
+```
+
+Control UI:
+- `http://127.0.0.1:18789`
+
+---
+
+## Security / OSS notes
+
+- Never commit `.env` or API keys.
+- Keep `rust-harness/.env.local` local.
+- Verify with:
+
+```bash
+git status
+git log --oneline -n 10
+```
+
+---
+
+## References
+
+- OpenClaw docs: https://docs.openclaw.ai
+- OpenClaw source: https://github.com/openclaw/openclaw
+- Harness deep docs: `rust-harness/README.md`

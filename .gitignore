@@ -45,6 +45,10 @@ reports/
 research-curation/
 kb/assets/pdfs/
 
+# Local harness runtime config/secrets
+rust-harness/config.local.toml
+rust-harness/prompts/session-prompt.txt
+
 reports/overnight-coding-watchdog.log
 reports/overnight-coding-watchdog.nohup.log
 reports/overnight-cron-worklog.log
