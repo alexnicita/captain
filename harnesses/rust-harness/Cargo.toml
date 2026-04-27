@@ -5,6 +5,17 @@ edition = "2021"
 description = "General-purpose Rust harness for provider/tool orchestration"
 license = "MIT"
 
+[lib]
+path = "../../captain/src/rust-harness/lib.rs"
+
+[[bin]]
+name = "agent-harness"
+path = "../../captain/src/rust-harness/main.rs"
+
+[[test]]
+name = "commit_subject_quality_gate_v2"
+path = "../../captain/tests/rust-harness/commit_subject_quality_gate_v2.rs"
+
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"

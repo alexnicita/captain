@@ -9,6 +9,8 @@ This project is intentionally **config-driven and pluggable**:
 - emit JSONL event streams for replay/eval/regression checks
 - stay Rust-first (no Python runtime dependency for orchestration)
 
+Implementation source now lives under `../../captain/src/rust-harness`; this directory keeps the stable Cargo, fixture, script, and runbook surface.
+
 See `ARCHITECTURE.md` for internals and extension points.
 If you're migrating from Python-side orchestration helpers, see `MIGRATION.md`.
 

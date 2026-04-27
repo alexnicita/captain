@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn replay_parses_fixture() {
-        let fixture = include_str!("../fixtures/good_run.jsonl");
+        let fixture = include_str!("../../../harnesses/rust-harness/fixtures/good_run.jsonl");
         let summary = replay_str(fixture).unwrap();
         assert!(summary.total_events >= 4);
         assert_eq!(summary.kinds.get("task.started").copied().unwrap_or(0), 1);

@@ -51,8 +51,12 @@ OpenClaw and similar agents make it easy to give a model real tools and persiste
 
 ## Project Layout
 
-- `harnesses/rust-harness/` - Rust coding harness for plan/act/verify loops, event replay, eval, and commit gates.
-- `harnesses/hourly-harness/` - minimum-runtime plus checklist gate harness.
+- `captain/` - canonical product tree, with `src/`, `tests/`, `docs/`, and subsystem ownership metadata.
+- `captain/src/rust-harness/` - active Rust governance harness implementation.
+- `captain/src/hourly-harness/` - active Python runtime/checklist gate implementation.
+- `captain/tests/` - product tests referenced by Cargo/pytest.
+- `harnesses/rust-harness/` - stable Cargo/scripts compatibility layer for the Rust harness.
+- `harnesses/hourly-harness/` - stable CLI compatibility layer for the runtime/checklist gate.
 - `examples/` - copy-paste launch scenarios for PR review, one-hour sprints, and risky-change blocking.
 - `demo/90-second-demo.md` - launch demo script/storyboard.
 - `skills/` - OpenClaw-compatible skill packs, including Captain governance integration.

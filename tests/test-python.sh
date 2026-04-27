@@ -15,7 +15,7 @@ fi
 "$PYTHON_BIN" -m pip install -q -r tests/requirements-python.txt
 
 "$PYTHON_BIN" -m pytest \
-  harnesses/hourly-harness/tests \
+  captain/tests/hourly-harness \
   tests/python \
   --cov=forced_hour_harness \
   --cov-report=term-missing \

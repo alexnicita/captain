@@ -8,8 +8,8 @@ Related scaffold at repo root:
 
 ## Included harnesses
 
-- `hourly-harness/` — runtime + checklist enforcement harness (minimum-time gate)
-- `rust-harness/` — full coding orchestration harness (plan/act/verify cycles)
+- `hourly-harness/` — stable wrapper around `captain/src/hourly-harness`
+- `rust-harness/` — Cargo/scripts compatibility layer for `captain/src/rust-harness`
 
 ## How to choose
 

@@ -11,7 +11,8 @@ It also writes heartbeat/progress logs at a fixed interval (default **every 10 m
 
 ## Files
 
-- `harnesses/hourly-harness/forced_hour_harness.py` — main runner + status/stop commands
+- `captain/src/hourly-harness/forced_hour_harness.py` — main runner + status/stop commands
+- `harnesses/hourly-harness/forced_hour_harness.py` — compatibility entrypoint
 - `harnesses/hourly-harness/run.sh` — small convenience wrapper
 - `harnesses/hourly-harness/checklist.example.md` — checklist template for each run
 - `harnesses/hourly-harness/test_dry_run.sh` — smoke test for short dry-run

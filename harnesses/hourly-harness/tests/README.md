@@ -1,6 +1,6 @@
 # Hourly Harness Tests
 
-Pytest suite for `forced_hour_harness.py` logic and CLI flows.
+Compatibility note: the pytest suite moved to `captain/tests/hourly-harness`.
 
 Run:
 

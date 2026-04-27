@@ -13,7 +13,7 @@ _Last updated: 2026-04-27_
 ## P1 - Governance Product Surface
 
 - [ ] Add more event fixtures for failed commits, blocked commands, no-op streaks, and replay/eval regressions.
-- [ ] Continue extracting `harnesses/rust-harness/src/coding.rs` into focused modules.
+- [ ] Continue extracting `captain/src/rust-harness/coding.rs` into focused modules.
 - [ ] Add anonymized report examples under a public gallery.
 - [ ] Add a minimal governance config guide for command policy, runtime budgets, sandbox expectations, and commit gates.
 

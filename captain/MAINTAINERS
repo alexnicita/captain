@@ -1,0 +1,33 @@
+# Captain Maintainers Map
+
+This file follows the spirit of Linux kernel subsystem ownership: every major directory should have a clear reason to exist and an accountable review surface.
+
+## Product Core
+
+Path: `captain/src/rust-harness/`
+Role: Rust governance harness, event contract, replay/eval, scheduler, provider/tool orchestration, coding loop.
+Required checks: Rust tests, fmt, clippy.
+
+## Runtime Gates
+
+Path: `captain/src/hourly-harness/`
+Role: Python forced-runtime/checklist gate retained for lightweight operations and smoke coverage.
+Required checks: Python pytest suite via `tests/test-python.sh`.
+
+## Product Tests
+
+Path: `captain/tests/`
+Role: Tests that validate Captain product behavior rather than repository scaffolding.
+Required checks: `RUN_RUST_TESTS=1 bash tests/run.sh`.
+
+## Compatibility Entrypoints
+
+Path: `harnesses/`, `scripts/`, `tests/`
+Role: Stable public command paths and release tooling.
+Required checks: script syntax and smoke tests.
+
+## Documentation And Launch Surface
+
+Path: `README.md`, `captain/docs/`, `demo/`, `examples/`, `skills/`
+Role: Public positioning, launch demos, OpenClaw integration, and copy-paste operating examples.
+Required checks: docs stay consistent with the stable command surface.

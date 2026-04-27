@@ -6,6 +6,13 @@ cd "$ROOT"
 
 required_paths=(
   "README.md"
+  "captain/README.md"
+  "captain/src/README.md"
+  "captain/src/rust-harness/lib.rs"
+  "captain/src/hourly-harness/forced_hour_harness.py"
+  "captain/tests/README.md"
+  "captain/tests/rust-harness/commit_subject_quality_gate_v2.rs"
+  "captain/tests/hourly-harness/test_forced_hour_harness.py"
   "harnesses/README.md"
   "harnesses/hourly-harness/README.md"
   "harnesses/rust-harness/README.md"

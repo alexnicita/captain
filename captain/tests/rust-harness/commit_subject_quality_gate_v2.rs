@@ -1,4 +1,4 @@
-#[path = "../src/commit_subject_quality.rs"]
+#[path = "../../src/rust-harness/commit_subject_quality.rs"]
 mod commit_subject_quality;
 
 use commit_subject_quality::{

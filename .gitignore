@@ -60,6 +60,8 @@ __pycache__/
 *.log
 *.log.*
 harnesses/hourly-harness/*.log
+captain/src/hourly-harness/runs/
+captain/src/hourly-harness/checklist.test.md
 /reports/
 /research-curation/
 /knowledge/assets/pdfs/

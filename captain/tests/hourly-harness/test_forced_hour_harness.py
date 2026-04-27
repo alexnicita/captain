@@ -11,7 +11,12 @@ import pytest
 
 @pytest.fixture()
 def mod(tmp_path: Path):
-    file_path = Path(__file__).resolve().parents[1] / "forced_hour_harness.py"
+    file_path = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "hourly-harness"
+        / "forced_hour_harness.py"
+    )
     spec = importlib.util.spec_from_file_location("forced_hour_harness", file_path)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
