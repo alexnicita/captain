@@ -40,14 +40,14 @@ POSTMORTEM-*.md
 # Local ops output / logs / research artifacts
 *.log
 *.log.*
-harness/*.log
+harnesses/hourly-harness/*.log
 reports/
 research-curation/
 kb/assets/pdfs/
 
 # Local harness runtime config/secrets
-rust-harness/config.local.toml
-rust-harness/prompts/session-prompt.txt
+harnesses/rust-harness/config.local.toml
+harnesses/rust-harness/prompts/session-prompt.txt
 
 reports/overnight-coding-watchdog.log
 reports/overnight-coding-watchdog.nohup.log

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-EVENTS_FILE="/home/ec2-user/.openclaw/workspace/rust-harness/runs/events.jsonl"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HARNESS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+EVENTS_FILE="$HARNESS_ROOT/runs/events.jsonl"
 
 if [[ ! -f "$EVENTS_FILE" ]]; then
   echo "events file not found: $EVENTS_FILE" >&2

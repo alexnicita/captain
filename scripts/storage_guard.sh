@@ -22,20 +22,20 @@ report() {
   log "free_gb=$(gb_avail) min_free_gb=$MIN_FREE_GB"
   du -sh "$WORKSPACE/tmp_research" 2>/dev/null | sed 's/^/[storage-guard] /' || true
   du -sh "$WORKSPACE/tmp" 2>/dev/null | sed 's/^/[storage-guard] /' || true
-  du -sh "$WORKSPACE/rust-harness/target" 2>/dev/null | sed 's/^/[storage-guard] /' || true
-  du -sh "$WORKSPACE/rust-harness/runs" 2>/dev/null | sed 's/^/[storage-guard] /' || true
+  du -sh "$WORKSPACE/harnesses/rust-harness/target" 2>/dev/null | sed 's/^/[storage-guard] /' || true
+  du -sh "$WORKSPACE/harnesses/rust-harness/runs" 2>/dev/null | sed 's/^/[storage-guard] /' || true
 }
 
 prune_light() {
   log "light prune: deleting disposable research clones + stale run artifacts"
   rm -rf "$WORKSPACE/tmp_research"/* 2>/dev/null || true
   find "$WORKSPACE/tmp" -mindepth 1 -maxdepth 1 -type d -mtime +2 -exec rm -rf {} + 2>/dev/null || true
-  find "$WORKSPACE/rust-harness/runs" -type f -mtime +14 -delete 2>/dev/null || true
+  find "$WORKSPACE/harnesses/rust-harness/runs" -type f -mtime +14 -delete 2>/dev/null || true
 }
 
 prune_aggressive() {
   log "aggressive prune: cleaning Rust build caches"
-  (cd "$WORKSPACE/rust-harness" && cargo clean) || true
+  (cd "$WORKSPACE/harnesses/rust-harness" && cargo clean) || true
   find "$WORKSPACE/tmp" -type d -name target -prune -exec rm -rf {} + 2>/dev/null || true
   find "$WORKSPACE/tmp_research" -type d -name target -prune -exec rm -rf {} + 2>/dev/null || true
 }

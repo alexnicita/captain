@@ -22,7 +22,7 @@ Options:
   --repo-name <name>       Repo folder name (default: captain)
   --config-path <path>     OpenClaw config path (default: ~/.openclaw/openclaw.json)
   --skip-openclaw-install  Don't install OpenClaw if missing
-  --no-init-harness        Skip rust-harness local init
+  --no-init-harness        Skip harness local init
   --no-config-update       Do not run 'openclaw config set' for workspace
   -h, --help               Show help
 
@@ -125,7 +125,7 @@ if [[ "$UPDATE_OPENCLAW_WORKSPACE" == "1" ]]; then
 fi
 
 if [[ "$INIT_HARNESS" == "1" ]]; then
-  echo "[5c/6] Initializing rust-harness local files..."
+  echo "[5c/6] Initializing harness local files..."
   bash "$TARGET_DIR/scripts/setup-harness-env.sh" || true
 fi
 

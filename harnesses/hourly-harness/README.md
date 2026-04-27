@@ -11,11 +11,11 @@ It also writes heartbeat/progress logs at a fixed interval (default **every 10 m
 
 ## Files
 
-- `harness/forced_hour_harness.py` — main runner + status/stop commands
-- `harness/run.sh` — small convenience wrapper
-- `harness/checklist.example.md` — checklist template for each run
-- `harness/test_dry_run.sh` — smoke test for short dry-run
-- `harness/runs/` — generated per-run state and logs
+- `harnesses/hourly-harness/forced_hour_harness.py` — main runner + status/stop commands
+- `harnesses/hourly-harness/run.sh` — small convenience wrapper
+- `harnesses/hourly-harness/checklist.example.md` — checklist template for each run
+- `harnesses/hourly-harness/test_dry_run.sh` — smoke test for short dry-run
+- `harnesses/hourly-harness/runs/` — generated per-run state and logs
 
 Each run creates:
 
@@ -30,22 +30,22 @@ Each run creates:
 1) Create a checklist for the run:
 
 ```bash
-cp harness/checklist.example.md harness/checklist.my-run.md
+cp harnesses/hourly-harness/checklist.example.md harnesses/hourly-harness/checklist.my-run.md
 ```
 
 2) Start enforcement run (default 60 min, 10 min heartbeat):
 
 ```bash
-python3 harness/forced_hour_harness.py run --checklist harness/checklist.my-run.md
+python3 harnesses/hourly-harness/forced_hour_harness.py run --checklist harnesses/hourly-harness/checklist.my-run.md
 # or
-harness/run.sh start harness/checklist.my-run.md
+harnesses/hourly-harness/run.sh start harnesses/hourly-harness/checklist.my-run.md
 ```
 
 3) In another terminal, monitor status/logs:
 
 ```bash
-python3 harness/forced_hour_harness.py status
-tail -f $(cat harness/runs/latest_run.txt)/progress.log
+python3 harnesses/hourly-harness/forced_hour_harness.py status
+tail -f $(cat harnesses/hourly-harness/runs/latest_run.txt)/progress.log
 ```
 
 4) Mark checklist items complete by editing checklist file (`[ ]` -> `[x]`).
@@ -59,8 +59,8 @@ tail -f $(cat harness/runs/latest_run.txt)/progress.log
 Use dry-run mode to test behavior quickly.
 
 ```bash
-python3 harness/forced_hour_harness.py run \
-  --checklist harness/checklist.my-run.md \
+python3 harnesses/hourly-harness/forced_hour_harness.py run \
+  --checklist harnesses/hourly-harness/checklist.my-run.md \
   --dry-run
 ```
 
@@ -75,7 +75,7 @@ You can override via:
 Smoke test:
 
 ```bash
-harness/test_dry_run.sh
+harnesses/hourly-harness/test_dry_run.sh
 ```
 
 ---
@@ -85,19 +85,19 @@ harness/test_dry_run.sh
 Status for latest run:
 
 ```bash
-python3 harness/forced_hour_harness.py status
+python3 harnesses/hourly-harness/forced_hour_harness.py status
 ```
 
 Status for specific run:
 
 ```bash
-python3 harness/forced_hour_harness.py status --run-dir harness/runs/run-... 
+python3 harnesses/hourly-harness/forced_hour_harness.py status --run-dir harnesses/hourly-harness/runs/run-... 
 ```
 
 Request stop for latest run:
 
 ```bash
-python3 harness/forced_hour_harness.py stop
+python3 harnesses/hourly-harness/forced_hour_harness.py stop
 ```
 
 Stop creates `STOP` in the run folder; active run exits on next poll cycle.

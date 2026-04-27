@@ -7,10 +7,10 @@ PY="python3"
 usage() {
   cat <<'EOF'
 Usage:
-  harness/run.sh start <checklist.md> [--run-id NAME]
-  harness/run.sh start-dry <checklist.md> [--run-id NAME]
-  harness/run.sh status [--run-dir PATH]
-  harness/run.sh stop [--run-dir PATH]
+  harnesses/hourly-harness/run.sh start <checklist.md> [--run-id NAME]
+  harnesses/hourly-harness/run.sh start-dry <checklist.md> [--run-id NAME]
+  harnesses/hourly-harness/run.sh status [--run-dir PATH]
+  harnesses/hourly-harness/run.sh stop [--run-dir PATH]
 EOF
 }
 

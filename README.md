@@ -1,25 +1,27 @@
-# captain (OpenClaw Harness Workspace)
+# captain — Harness Framework for Agent Governance
 
-This repo is a ready-to-clone workspace for running the **Rust harness** (`rust-harness/`) with OpenClaw.
+`captain` is a framework-style workspace for building and running **harnesses that govern coding agents** (OpenClaw and similar systems).
 
-It includes:
-- a production-style harness runner (`rust-harness/start.sh`)
-- canonical timeboxed runner (`rust-harness/scripts/harness.sh`)
-- bootstrap scripts to set up OpenClaw + harness local files
+## Core idea
 
----
-
-## What the harness does
-
-The harness runs a timeboxed coding loop with explicit phases (architecture → feature → conformance → cleanup → pause), event logs, and optional commit/push-per-cycle behavior.
-
-Primary entrypoints:
-- `rust-harness/start.sh` → fast default for coding runs
-- `rust-harness/scripts/harness.sh --repo <path> --time <duration>` → canonical interface
+Use harnesses as policy + runtime control layers around autonomous agents:
+- enforce execution constraints
+- standardize loop behavior
+- collect reproducible logs/artifacts
+- keep operator control explicit
 
 ---
 
-## One-command setup (recommended)
+## Project layout
+
+- `harnesses/hourly-harness/` — minimum-runtime + checklist gate harness
+- `harnesses/rust-harness/` — full Rust coding harness (timeboxed plan/act/verify loop)
+- `scripts/setup-openclaw-captain.sh` — bootstrap OpenClaw + workspace + harness init
+- `scripts/setup-harness-env.sh` — create local harness runtime files
+
+---
+
+## Quick start
 
 ```bash
 git clone https://github.com/alexnicita/captain.git
@@ -27,29 +29,16 @@ cd captain
 bash scripts/setup-openclaw-captain.sh
 ```
 
-This will:
-1. verify/install OpenClaw
-2. clone/update workspace
-3. create `~/.openclaw/openclaw.json` if missing
-4. set `agents.defaults.workspace` to this repo
-5. initialize harness local files:
-   - `rust-harness/config.local.toml`
-   - `rust-harness/.env.local`
-   - `rust-harness/prompts/session-prompt.txt`
-   - `rust-harness/runs/`
+This sets up OpenClaw and initializes local harness files for `harnesses/rust-harness`.
 
 ---
 
-## Add this harness to OpenClaw
+## Add this framework to OpenClaw
 
-### Option A (auto via setup script)
-Already handled by `scripts/setup-openclaw-captain.sh` using:
+### Automatic
+Included in setup script (`openclaw config set agents.defaults.workspace ...`).
 
-```bash
-openclaw config set agents.defaults.workspace <this-repo-path>
-```
-
-### Option B (manual)
+### Manual
 
 ```bash
 openclaw config set agents.defaults.workspace ~/.openclaw/workspace/captain
@@ -57,89 +46,65 @@ openclaw gateway restart
 openclaw config get agents.defaults.workspace
 ```
 
-If you prefer direct file edit, `~/.openclaw/openclaw.json` should include:
-
-```json5
-{
-  agents: {
-    defaults: {
-      workspace: "~/.openclaw/workspace/captain",
-    },
-  },
-}
-```
+Expected value: your local clone path for this repo.
 
 ---
 
-## Configure credentials for harness runs
-
-Edit local-only env file:
+## Harness setup (local files)
 
 ```bash
-nano rust-harness/.env.local
+bash scripts/setup-harness-env.sh
 ```
 
-Set at minimum:
+Creates (if missing):
+- `harnesses/rust-harness/config.local.toml`
+- `harnesses/rust-harness/.env.local`
+- `harnesses/rust-harness/prompts/session-prompt.txt`
+- `harnesses/rust-harness/runs/`
+
+Set credentials in:
 
 ```bash
-OPENAI_API_KEY=your_key_here
+nano harnesses/rust-harness/.env.local
 ```
 
-Then load it for your shell session:
+Load into shell:
 
 ```bash
 set -a
-source rust-harness/.env.local
+source harnesses/rust-harness/.env.local
 set +a
 ```
 
 ---
 
-## First run
+## Run the harnesses
+
+### Rust harness (coding loop)
 
 ```bash
-cd rust-harness
+cd harnesses/rust-harness
 ./scripts/check_toolchain.sh
 ./start.sh 1h
 ```
 
-Alternative (explicit canonical runner):
+Canonical interface:
 
 ```bash
 ./scripts/harness.sh --repo . --time 45m --prompt-file ./prompts/session-prompt.txt
 ```
 
----
-
-## Script guide
-
-### `scripts/setup-openclaw-captain.sh`
-Bootstrap OpenClaw + workspace + harness local files.
+### Hourly harness (duration + checklist gate)
 
 ```bash
-bash scripts/setup-openclaw-captain.sh [options]
-```
-
-Options:
-- `--repo-url <url>`
-- `--install-dir <path>`
-- `--target-dir <path>`
-- `--repo-name <name>`
-- `--config-path <path>`
-- `--skip-openclaw-install`
-- `--no-init-harness`
-- `--no-config-update`
-
-### `scripts/setup-harness-env.sh`
-Initialize just harness local runtime files.
-
-```bash
-bash scripts/setup-harness-env.sh [--harness-dir <path>]
+cd harnesses/hourly-harness
+cp checklist.example.md checklist.my-run.md
+./run.sh start ./checklist.my-run.md
 ```
 
 ---
 
-## OpenClaw verification commands
+## OpenClaw verification
 
 ```bash
 openclaw status
@@ -148,15 +113,15 @@ openclaw config get agents.defaults.workspace
 ```
 
 Control UI:
-- `http://127.0.0.1:18789`
+- http://127.0.0.1:18789
 
 ---
 
-## Security / OSS notes
+## Security notes
 
-- Never commit `.env` or API keys.
-- Keep `rust-harness/.env.local` local.
-- Verify with:
+- Never commit API keys or local secrets.
+- Keep `harnesses/rust-harness/.env.local` local.
+- Validate before publishing:
 
 ```bash
 git status
@@ -165,8 +130,8 @@ git log --oneline -n 10
 
 ---
 
-## References
+## Docs
 
+- Framework index: `harnesses/README.md`
+- Rust harness deep docs: `harnesses/rust-harness/README.md`
 - OpenClaw docs: https://docs.openclaw.ai
-- OpenClaw source: https://github.com/openclaw/openclaw
-- Harness deep docs: `rust-harness/README.md`

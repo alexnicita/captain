@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HARNESS_DIR="${HARNESS_DIR:-$REPO_ROOT/rust-harness}"
+HARNESS_DIR="${HARNESS_DIR:-$REPO_ROOT/harnesses/rust-harness}"
 CONFIG_TEMPLATE="$HARNESS_DIR/config.example.toml"
 CONFIG_LOCAL="$HARNESS_DIR/config.local.toml"
 ENV_LOCAL="$HARNESS_DIR/.env.local"
@@ -15,14 +15,14 @@ Usage:
   scripts/setup-harness-env.sh [options]
 
 Options:
-  --harness-dir <path>      Override rust-harness path
+  --harness-dir <path>      Override harness path
   -h, --help                Show help
 
 What this initializes:
-  - rust-harness/config.local.toml (from config.example.toml)
-  - rust-harness/.env.local (OPENAI_API_KEY placeholder)
-  - rust-harness/prompts/session-prompt.txt
-  - rust-harness/runs directory
+  - harnesses/rust-harness/config.local.toml (from config.example.toml)
+  - harnesses/rust-harness/.env.local (OPENAI_API_KEY placeholder)
+  - harnesses/rust-harness/prompts/session-prompt.txt
+  - harnesses/rust-harness/runs directory
 EOF
 }
 
@@ -89,7 +89,7 @@ fi
 
 if [[ ! -f "$ENV_LOCAL" ]]; then
   cat > "$ENV_LOCAL" <<'EOF'
-# Local-only secrets for rust-harness (gitignored)
+# Local-only secrets for harnesses/rust-harness (gitignored)
 OPENAI_API_KEY=
 
 # Optional provider overrides
