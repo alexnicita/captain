@@ -66,6 +66,15 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - Anything that leaves the machine
 - Anything you're uncertain about
 
+## Private Repo Clones
+
+When cloning confidential/private repositories, place them under:
+
+- `private/repos/`
+
+Do not clone private repos into tracked public scaffold folders.
+Public harness/framework contributions can go in tracked folders like `harnesses/`.
+
 ## Group Chats
 
 You have access to your human's stuff. That doesn't mean you _share_ their stuff. In groups, you're a participant — not their voice, not their proxy. Think before you speak.

@@ -18,6 +18,7 @@ Use harnesses as policy + runtime control layers around autonomous agents:
 - `harnesses/rust-harness/` — full Rust coding harness (timeboxed plan/act/verify loop)
 - `knowledge-base/` — curated business/operating research library
 - `roadmap/backlog.md` — prioritized execution backlog
+- `private/` — local private zone (repos/secrets/notes), excluded from git
 - `scripts/setup-openclaw-captain.sh` — bootstrap OpenClaw + workspace + harness init
 - `scripts/setup-harness-env.sh` — create local harness runtime files
 
@@ -125,6 +126,7 @@ Control UI:
 
 - Never commit API keys or local secrets.
 - Keep `harnesses/rust-harness/.env.local` local.
+- Clone confidential repos into `private/repos/`.
 - Validate before publishing:
 
 ```bash
@@ -138,4 +140,5 @@ git log --oneline -n 10
 
 - Framework index: `harnesses/README.md`
 - Rust harness deep docs: `harnesses/rust-harness/README.md`
+- Private workspace rules: `private/README.md`
 - OpenClaw docs: https://docs.openclaw.ai

@@ -19,12 +19,16 @@ A readability-first map of the public scaffold.
 - `scripts/setup-harness-env.sh` — initialize local harness runtime files
 - `scripts/storage_guard.sh` — disk maintenance helper
 
+## Private-by-default area
+
+- `private/` — local-only zone for confidential repo clones, secrets, and notes
+
 ## Agent persona/workspace context
 
 - `AGENTS.md`, `SOUL.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`
 
 ## Local/private (intentionally excluded from OSS scope)
 
-- `cc/`, `prompts/`, `memory/`, `reports/`, `tmp_research/`, local secrets/logs
+- `cc/`, `prompts/`, `memory/`, `reports/`, `tmp_research/`, `private/`, local secrets/logs
 
 These are ignored by `.gitignore` where appropriate.

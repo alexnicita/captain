@@ -8,6 +8,11 @@ tmp_research/
 memory/
 MEMORY.md
 
+# Private workspace zone (tracked docs only)
+private/*
+!private/README.md
+!private/.gitkeep
+
 # Local-generated assets
 avatars/
 
