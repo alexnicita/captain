@@ -17,3 +17,36 @@ package-lock.json
 
 # OpenClaw local runtime state
 .openclaw/
+
+# Secrets / machine-local env
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# Proprietary ConstantCoder code/worktrees (keep out of OSS repo)
+cc/
+cc-localhost-3000.png
+prompts/
+scripts/cc_*.sh
+scripts/commit_monitor.sh
+scripts/cron_logger.sh
+scripts/overnight-coding-watchdog.sh
+scripts/overnight_worker_loop.sh
+install-gh.sh
+POSTMORTEM-*.md
+
+# Local ops output / logs / research artifacts
+*.log
+*.log.*
+harness/*.log
+reports/
+research-curation/
+kb/assets/pdfs/
+
+reports/overnight-coding-watchdog.log
+reports/overnight-coding-watchdog.nohup.log
+reports/overnight-cron-worklog.log
+reports/overnight-cron-worklog.log.lastts
+reports/overnight-worker.log
