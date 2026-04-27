@@ -15,7 +15,7 @@ Use this skill when broad web search is needed and native `web_search` cannot ru
 Run:
 
 ```bash
-PARALLEL_API_KEY="$PARALLEL_API_KEY" node /home/ec2-user/.openclaw/workspace/tools/parallel-search.js --query "<query>" --count 10
+PARALLEL_API_KEY="$PARALLEL_API_KEY" node "$CAPTAIN_HOME/tools/parallel-search.js" --query "<query>" --count 10
 ```
 
 Optional flags:

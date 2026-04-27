@@ -135,7 +135,7 @@ fn extract_json_edits(message: &str) -> Option<(Vec<String>, String)> {
     paths.sort();
     paths.dedup();
 
-    let sentinel = format!("HARNESS_JSON_EDITS\n{}", payload);
+    let sentinel = format!("HARNESS_JSON_EDITS\n{payload}");
     Some((paths, sentinel))
 }
 

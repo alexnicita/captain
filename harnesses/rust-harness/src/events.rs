@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,7 +26,6 @@ pub mod kinds {
     pub const SCHEDULER_TICK: &str = "scheduler.tick";
     pub const CLI_RUN_SUMMARY: &str = "cli.run.summary";
     pub const CLI_BATCH_SUMMARY: &str = "cli.batch.summary";
-
     pub const CODING_RUN_STARTED: &str = "coding.run.started";
     pub const CODING_RUN_FINISHED: &str = "coding.run.finished";
     pub const CODING_CYCLE_STARTED: &str = "coding.cycle.started";
@@ -48,10 +48,10 @@ pub mod kinds {
 pub struct HarnessEvent {
     pub ts_unix: u64,
     pub kind: String,
-    #[serde(default)]
-    pub run_id: String,
-    #[serde(default)]
-    pub seq: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seq: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     #[serde(default)]
@@ -63,15 +63,20 @@ impl HarnessEvent {
         Self {
             ts_unix: now_unix(),
             kind: kind.into(),
-            run_id: String::new(),
-            seq: 0,
+            seq: None,
+            run_id: None,
             task_id: None,
             data: Value::Null,
         }
     }
 
     pub fn with_run_id(mut self, run_id: impl Into<String>) -> Self {
-        self.run_id = run_id.into();
+        self.run_id = Some(run_id.into());
+        self
+    }
+
+    pub fn with_seq(mut self, seq: u64) -> Self {
+        self.seq = Some(seq);
         self
     }
 
@@ -88,18 +93,25 @@ impl HarnessEvent {
 
 #[derive(Clone)]
 pub struct EventSink {
-    path: std::path::PathBuf,
-    run_id: String,
-    next_seq: Arc<Mutex<u64>>,
     file: Arc<Mutex<std::fs::File>>,
+    path: Arc<PathBuf>,
+    run_id: Arc<String>,
+    next_seq: Arc<Mutex<u64>>,
 }
 
 impl EventSink {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
+        Self::new_with_run_id(path, default_run_id())
+    }
+
+    pub fn new_with_run_id(path: impl AsRef<Path>, run_id: impl Into<String>) -> Result<Self> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create event log parent dir: {}", parent.display())
+                format!(
+                    "failed to create event log parent dir: {}",
+                    parent.display()
+                )
             })?;
         }
         let file = OpenOptions::new()
@@ -107,37 +119,26 @@ impl EventSink {
             .append(true)
             .open(path)
             .with_context(|| format!("failed to open event log: {}", path.display()))?;
-
-        let run_id = format!("run-{}", now_unix());
-
         Ok(Self {
-            path: path.to_path_buf(),
-            run_id,
-            next_seq: Arc::new(Mutex::new(1)),
             file: Arc::new(Mutex::new(file)),
+            path: Arc::new(path.to_path_buf()),
+            run_id: Arc::new(run_id.into()),
+            next_seq: Arc::new(Mutex::new(1)),
         })
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub fn run_id(&self) -> &str {
-        &self.run_id
-    }
-
     pub fn emit(&self, event: &HarnessEvent) -> Result<()> {
-        let mut enriched = event.clone();
-        if enriched.run_id.is_empty() {
-            enriched.run_id = self.run_id.clone();
+        let mut event = event.clone();
+        if event.run_id.is_none() {
+            event.run_id = Some(self.run_id().to_string());
         }
-        if enriched.seq == 0 {
-            let mut seq = self.next_seq.lock().expect("event seq mutex poisoned");
-            enriched.seq = *seq;
-            *seq += 1;
+        if event.seq.is_none() {
+            let mut next_seq = self.next_seq.lock().expect("event seq mutex poisoned");
+            event.seq = Some(*next_seq);
+            *next_seq += 1;
         }
 
-        let mut line = serde_json::to_vec(&enriched).context("failed to serialize event")?;
+        let mut line = serde_json::to_vec(&event).context("failed to serialize event")?;
         line.push(b'\n');
 
         let mut guard = self.file.lock().expect("event sink mutex poisoned");
@@ -147,6 +148,14 @@ impl EventSink {
         guard.flush().context("failed to flush event sink")?;
         Ok(())
     }
+
+    pub fn path(&self) -> &Path {
+        self.path.as_path()
+    }
+
+    pub fn run_id(&self) -> &str {
+        self.run_id.as_str()
+    }
 }
 
 pub fn now_unix() -> u64 {
@@ -154,6 +163,10 @@ pub fn now_unix() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn default_run_id() -> String {
+    format!("run-{}-{}", now_unix(), process::id())
 }
 
 #[cfg(test)]

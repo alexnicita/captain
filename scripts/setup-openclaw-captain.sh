@@ -72,8 +72,9 @@ need_cmd node
 need_cmd npm
 
 NODE_MAJOR="$(node -v | sed -E 's/^v([0-9]+).*/\1/')"
-if [[ "$NODE_MAJOR" -lt 20 ]]; then
-  echo "Node.js v20+ is required (found $(node -v))." >&2
+NODE_MINOR="$(node -v | sed -E 's/^v[0-9]+\\.([0-9]+).*/\1/')"
+if [[ "$NODE_MAJOR" -lt 22 || ( "$NODE_MAJOR" -eq 22 && "$NODE_MINOR" -lt 14 ) ]]; then
+  echo "Node.js 24 is recommended; Node.js 22.14+ is the minimum supported runtime (found $(node -v))." >&2
   exit 1
 fi
 
@@ -145,6 +146,9 @@ Next steps:
 
   4) Open Control UI:
        http://127.0.0.1:18789
+
+  5) Run Captain readiness checks:
+       bash ${TARGET_DIR}/scripts/captain-doctor.sh
 
 Installed workspace:
   ${TARGET_DIR}

@@ -8,13 +8,15 @@ set -euo pipefail
 #   scripts/observe-agent.sh --latest
 #   scripts/observe-agent.sh --file /path/to/transcript.jsonl
 #   scripts/observe-agent.sh --all
-#   scripts/observe-agent.sh --latest --kb-root /home/ec2-user/.openclaw/workspace/kb
+#   scripts/observe-agent.sh --latest --kb-root "$HOME/.openclaw/workspace/captain/knowledge"
 
 TRANSCRIPT_FILE=""
 USE_LATEST=0
 USE_ALL=0
-KB_ROOT="/home/ec2-user/.openclaw/workspace/kb"
-WORKSPACE="/home/ec2-user/.openclaw/workspace"
+OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+WORKSPACE="${OPENCLAW_WORKSPACE:-$OPENCLAW_HOME/workspace}"
+KB_ROOT="$WORKSPACE/captain/knowledge"
+SESSIONS_DIR="$OPENCLAW_HOME/agents/main/sessions"
 REFRESH_SECS=20
 
 while [[ $# -gt 0 ]]; do
@@ -40,7 +42,7 @@ done
 
 if [[ "$USE_LATEST" -eq 1 ]]; then
   # Prefer gateway session transcript store, fall back to workspace root.
-  TRANSCRIPT_FILE=$(ls -1t /home/ec2-user/.openclaw/agents/main/sessions/*.jsonl 2>/dev/null | head -n1 || true)
+  TRANSCRIPT_FILE=$(ls -1t "$SESSIONS_DIR"/*.jsonl 2>/dev/null | head -n1 || true)
   if [[ -z "$TRANSCRIPT_FILE" ]]; then
     TRANSCRIPT_FILE=$(ls -1t "$WORKSPACE"/*.jsonl 2>/dev/null | head -n1 || true)
   fi
@@ -132,9 +134,9 @@ trap cleanup EXIT INT TERM
 # We parse JSONL into readable categories with trimmed payloads.
 
 if [[ "$USE_ALL" -eq 1 ]]; then
-  mapfile -t _files < <(ls -1 /home/ec2-user/.openclaw/agents/main/sessions/*.jsonl 2>/dev/null || true)
+  mapfile -t _files < <(ls -1 "$SESSIONS_DIR"/*.jsonl 2>/dev/null || true)
   if [[ ${#_files[@]} -eq 0 ]]; then
-    echo "No session transcript files found under /home/ec2-user/.openclaw/agents/main/sessions" >&2
+    echo "No session transcript files found under $SESSIONS_DIR" >&2
     exit 1
   fi
   TAIL_CMD=(tail -qF "${_files[@]}")

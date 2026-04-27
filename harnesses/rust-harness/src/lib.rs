@@ -1,5 +1,6 @@
 pub mod code;
 pub mod coding;
+pub(crate) mod coding_tasks;
 pub mod config;
 pub mod eval;
 pub mod events;

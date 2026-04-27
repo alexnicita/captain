@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKSPACE="/home/ec2-user/.openclaw/workspace"
+OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+WORKSPACE="${OPENCLAW_WORKSPACE:-$OPENCLAW_HOME/workspace/captain}"
 ROOT_FS="/"
 MIN_FREE_GB="${MIN_FREE_GB:-8}"
 REPORT_ONLY="${1:-prune}" # prune|report

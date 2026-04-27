@@ -49,7 +49,7 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
     let selected_run_id = if let Some(run_id) = &filter.run_id {
         Some(run_id.clone())
     } else if filter.latest_run {
-        events.last().map(|evt| evt.run_id.clone())
+        events.iter().rev().find_map(|evt| evt.run_id.clone())
     } else {
         None
     };
@@ -66,7 +66,7 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
     for event in events.into_iter().filter(|event| {
         selected_run_id
             .as_ref()
-            .map(|run_id| &event.run_id == run_id)
+            .map(|run_id| event.run_id.as_deref() == Some(run_id.as_str()))
             .unwrap_or(true)
     }) {
         *kinds.entry(event.kind.clone()).or_default() += 1;
@@ -74,14 +74,18 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
             task_ids.insert(task_id);
         }
 
-        if let Some(previous_seq) = previous_seq_by_run.get(&event.run_id).copied() {
-            if event.seq <= previous_seq {
-                sequence_monotonic_per_run = false;
+        if let Some(run_id) = event.run_id.clone() {
+            if let Some(seq) = event.seq {
+                if let Some(previous_seq) = previous_seq_by_run.get(&run_id).copied() {
+                    if seq <= previous_seq {
+                        sequence_monotonic_per_run = false;
+                    }
+                }
+                previous_seq_by_run.insert(run_id.clone(), seq);
             }
-        }
-        previous_seq_by_run.insert(event.run_id.clone(), event.seq);
 
-        run_ids.insert(event.run_id);
+            run_ids.insert(run_id);
+        }
 
         first_ts = Some(first_ts.map_or(event.ts_unix, |ts: u64| ts.min(event.ts_unix)));
         last_ts = Some(last_ts.map_or(event.ts_unix, |ts: u64| ts.max(event.ts_unix)));

@@ -42,6 +42,7 @@ package-lock.json
 __pycache__/
 .pytest_cache/
 .coverage
+.venv-test/
 
 # Proprietary ConstantCoder code/worktrees (keep out of OSS repo)
 /cc/

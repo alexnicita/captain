@@ -74,7 +74,7 @@ impl<'a> Orchestrator<'a> {
             let provider_done = res.done;
             let planned_tool_calls = res.tool_calls;
 
-            transcript.push(format!("assistant: {}", provider_message));
+            transcript.push(format!("assistant: {provider_message}"));
             context.push(provider_message.clone());
             self.event_sink.emit(
                 &HarnessEvent::new(kinds::PROVIDER_RESPONSE)
@@ -123,7 +123,7 @@ impl<'a> Orchestrator<'a> {
                         )?;
                     }
                     Err(err) => {
-                        transcript.push(format!("tool:{} error: {}", tool_name, err));
+                        transcript.push(format!("tool:{tool_name} error: {err}"));
                         self.event_sink.emit(
                             &HarnessEvent::new(kinds::TOOL_ERROR)
                                 .with_task_id(task.task_id.clone())

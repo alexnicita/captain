@@ -1,4 +1,6 @@
-# Business Knowledge Base
+# Optional Business Knowledge Base
+
+This folder is optional background material. It is not required for Captain's core agent-governance runtime, install path, or launch demo.
 
 Execution-first repository for building and operating high-performance product and consulting businesses.
 

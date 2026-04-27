@@ -278,8 +278,7 @@ impl Provider for HttpProvider {
 
         if !status.is_success() {
             return Err(anyhow!(
-                "provider returned non-success status={status} body={} ",
-                body
+                "provider returned non-success status={status} body={body} "
             ));
         }
 

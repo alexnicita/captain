@@ -525,7 +525,7 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
             continue;
         };
         queue.enqueue(QueuedTask {
-            task_id: format!("{}-{}", task_prefix, task_index),
+            task_id: format!("{task_prefix}-{task_index}"),
             objective,
             priority,
         });
