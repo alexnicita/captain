@@ -80,7 +80,7 @@ _Last updated: 2026-02-28_
 
 ### 8) Knowledge Base Operations
 **Outcome:** Better decisions from institutional memory.
-- [ ] Stand up `kb/sources/index.md`
+- [ ] Stand up `knowledge-base/sources/index.md`
 - [ ] Add weekly intelligence brief template
 - [ ] Create decision log (ADR style)
 

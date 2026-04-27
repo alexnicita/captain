@@ -43,7 +43,7 @@ POSTMORTEM-*.md
 harnesses/hourly-harness/*.log
 reports/
 research-curation/
-kb/assets/pdfs/
+knowledge-base/assets/pdfs/
 
 # Local harness runtime config/secrets
 harnesses/rust-harness/config.local.toml

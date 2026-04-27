@@ -16,8 +16,12 @@ Use harnesses as policy + runtime control layers around autonomous agents:
 
 - `harnesses/hourly-harness/` — minimum-runtime + checklist gate harness
 - `harnesses/rust-harness/` — full Rust coding harness (timeboxed plan/act/verify loop)
+- `knowledge-base/` — curated business/operating research library
+- `roadmap/backlog.md` — prioritized execution backlog
 - `scripts/setup-openclaw-captain.sh` — bootstrap OpenClaw + workspace + harness init
 - `scripts/setup-harness-env.sh` — create local harness runtime files
+
+For a quick directory map, see `WORKSPACE_STRUCTURE.md`.
 
 ---
 

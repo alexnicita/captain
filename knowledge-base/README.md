@@ -1,8 +1,8 @@
-# Business Knowledge Base (KB)
+# Business Knowledge Base
 
 Execution-first repository for building and operating high-performance product and consulting businesses.
 
-## How to use this KB
+## How to use this knowledge base
 
 1. Start with **`00-meta/kb-operating-rules.md`**.
 2. Pick one domain folder based on your immediate priority (sales, delivery, strategy, pricing).
@@ -49,4 +49,3 @@ Permanent quote digests generated from the downloaded PDF library, organized by 
 - `sources/pdf-digests/pricing-profit-optimization.md`
 
 Each digest includes per-PDF source URLs, 3–7 direct quotes with page references when determinable, and a curated “Best Quotes (Top 10)” section.
-
