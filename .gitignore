@@ -39,24 +39,24 @@ package-lock.json
 *.p12
 
 # Proprietary ConstantCoder code/worktrees (keep out of OSS repo)
-cc/
-cc-localhost-3000.png
-prompts/
-scripts/cc_*.sh
-scripts/commit_monitor.sh
-scripts/cron_logger.sh
-scripts/overnight-coding-watchdog.sh
-scripts/overnight_worker_loop.sh
-install-gh.sh
-POSTMORTEM-*.md
+/cc/
+/cc-localhost-3000.png
+/prompts/
+/scripts/cc_*.sh
+/scripts/commit_monitor.sh
+/scripts/cron_logger.sh
+/scripts/overnight-coding-watchdog.sh
+/scripts/overnight_worker_loop.sh
+/install-gh.sh
+/POSTMORTEM-*.md
 
 # Local ops output / logs / research artifacts
 *.log
 *.log.*
 harnesses/hourly-harness/*.log
-reports/
-research-curation/
-knowledge-base/assets/pdfs/
+/reports/
+/research-curation/
+/knowledge-base/assets/pdfs/
 
 # Local harness runtime config/secrets
 harnesses/rust-harness/config.local.toml
