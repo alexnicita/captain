@@ -2,6 +2,8 @@
 
 Use this folder for anything that should stay private on your machine.
 
+Guiding principle: **personal = private**.
+
 ## Rules
 
 - Put cloned private repos under: `private/repos/`

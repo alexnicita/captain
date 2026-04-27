@@ -2,6 +2,8 @@
 
 This is your local operator profile file.
 
+Guiding principle: **personal = private**.
+
 ## Session startup checklist
 
 1. Read `SOUL.md`

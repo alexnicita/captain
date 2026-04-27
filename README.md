@@ -2,6 +2,8 @@
 
 `captain` is a framework-style workspace for building and running **harnesses that govern coding agents** (OpenClaw and similar systems).
 
+> Guiding principle: **personal = private**.
+
 ## Core idea
 
 Use harnesses as policy + runtime control layers around autonomous agents:

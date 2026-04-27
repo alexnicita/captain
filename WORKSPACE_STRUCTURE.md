@@ -22,6 +22,7 @@ A readability-first map of the public scaffold.
 ## Private-by-default area
 
 - `private/` — local-only zone for confidential repo clones, secrets, and notes
+- Principle: **personal = private**
 
 ## Agent persona/workspace context
 
