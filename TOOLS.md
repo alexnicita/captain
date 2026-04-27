@@ -45,7 +45,9 @@ Things like:
 
 ### Git Workflow Preference
 
-- After every local commit, immediately push to remote (`origin/master`) unless explicitly told otherwise.
+- In the **ConstantCoder** repo: after every local commit, push to `origin/staging` unless explicitly told otherwise.
+- In the **ConstantCoder** repo: open PRs from `staging` → `master` for integration.
+- In the **captain** repo: after every local commit, push directly to `origin/master` unless explicitly told otherwise.
 - Commit subjects must be human-informative and specific.
 - Never use vague/templated subjects like: `build a generalizable ... — harness: coding cycle`.
 - Use Conventional Commits with concrete scope + action (what changed and why).
