@@ -140,6 +140,18 @@ Control UI:
 
 ---
 
+## Testing
+
+Run basic repo smoke tests:
+
+```bash
+bash tests/run.sh
+```
+
+Covers scaffold checks, script validation, and a short hourly-harness dry-run.
+
+---
+
 ## Security notes
 
 - Never commit API keys or local secrets.
