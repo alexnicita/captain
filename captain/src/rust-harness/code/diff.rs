@@ -132,8 +132,14 @@ fn extract_json_edits(message: &str) -> Option<(Vec<String>, String)> {
         paths.push(path.to_string());
     }
 
-    paths.sort();
-    paths.dedup();
+    let mut dedup = paths.clone();
+    dedup.sort();
+    dedup.dedup();
+    if dedup.len() != paths.len() {
+        return None;
+    }
+
+    paths = dedup;
 
     let sentinel = format!("HARNESS_JSON_EDITS\n{payload}");
     Some((paths, sentinel))
@@ -142,11 +148,58 @@ fn extract_json_edits(message: &str) -> Option<(Vec<String>, String)> {
 fn extract_touched_files(diff: &str) -> Vec<String> {
     let mut files = Vec::new();
     for line in diff.lines() {
-        if let Some(path) = line.strip_prefix("+++ b/") {
-            files.push(path.trim().to_string());
+        if let Some(path) = line
+            .strip_prefix("+++ b/")
+            .or_else(|| line.strip_prefix("--- a/"))
+        {
+            let trimmed = path.trim();
+            if !trimmed.is_empty() && trimmed != "/dev/null" {
+                files.push(trimmed.to_string());
+            }
         }
     }
     files.sort();
     files.dedup();
     files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_json_edits, extract_touched_files};
+
+    #[test]
+    fn touched_files_includes_add_delete_and_rename_paths() {
+        let diff = r#"
+diff --git a/old.txt b/new.txt
+similarity index 100%
+rename from old.txt
+rename to new.txt
+--- a/old.txt
++++ b/new.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/gone.rs b/src/gone.rs
+deleted file mode 100644
+--- a/src/gone.rs
++++ /dev/null
+@@ -1 +0,0 @@
+-fn gone() {}
+diff --git a/src/added.rs b/src/added.rs
+new file mode 100644
+--- /dev/null
++++ b/src/added.rs
+@@ -0,0 +1 @@
++fn added() {}
+"#;
+
+        let files = extract_touched_files(diff);
+        assert_eq!(files, vec!["new.txt", "old.txt", "src/added.rs", "src/gone.rs"]);
+    }
+
+    #[test]
+    fn json_edits_rejects_duplicate_paths() {
+        let dup = r#"{"edits":[{"path":"src/a.rs","content":"fn a() {}"},{"path":"src/a.rs","content":"fn b() {}"}]}"#;
+        assert!(extract_json_edits(dup).is_none());
+    }
 }

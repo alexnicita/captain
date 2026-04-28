@@ -67,17 +67,9 @@ fn parse_steps(message: &str, target_files: &[String]) -> Vec<ArchitecturePlanSt
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.starts_with('-')
-            || trimmed.starts_with('*')
-            || trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
-        {
+        if is_step_line(trimmed) {
             steps.push(ArchitecturePlanStep {
-                title: trimmed
-                    .trim_start_matches(|c: char| {
-                        c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ')'
-                    })
-                    .trim()
-                    .to_string(),
+                title: strip_step_prefix(trimmed).to_string(),
                 rationale: "generated from provider planning response".to_string(),
                 expected_files: target_files.to_vec(),
             });
@@ -93,4 +85,43 @@ fn parse_steps(message: &str, target_files: &[String]) -> Vec<ArchitecturePlanSt
     }
 
     steps
+}
+
+fn is_step_line(line: &str) -> bool {
+    if line.starts_with('-') || line.starts_with('*') {
+        return true;
+    }
+
+    let digit_prefix_len = line.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_prefix_len == 0 {
+        return false;
+    }
+
+    matches!(line.chars().nth(digit_prefix_len), Some('.') | Some(')'))
+}
+
+fn strip_step_prefix(line: &str) -> &str {
+    line.trim_start_matches(|c: char| c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ')')
+        .trim()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_step_line, parse_steps};
+
+    #[test]
+    fn numeric_step_requires_delimiter() {
+        assert!(is_step_line("1. do thing"));
+        assert!(is_step_line("2) do thing"));
+        assert!(!is_step_line("2026 roadmap item"));
+    }
+
+    #[test]
+    fn parse_steps_uses_fallback_for_unstructured_lines() {
+        let steps = parse_steps("Architecture: improve reliability", &["src/a.rs".to_string()]);
+        assert_eq!(steps.len(), 1);
+        assert!(steps[0]
+            .title
+            .contains("Implement smallest viable change that advances objective"));
+    }
 }
