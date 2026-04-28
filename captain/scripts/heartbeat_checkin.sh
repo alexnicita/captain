@@ -6,7 +6,11 @@ STATE_FILE="$ROOT/memory/heartbeat-state.json"
 NOW="$(date -u +%s)"
 
 usage() {
-  echo "Usage: captain/scripts/heartbeat_checkin.sh --status | --check <email|calendar|mentions|weather|workspace|memory>"
+  cat <<'EOF'
+Usage:
+  captain/scripts/heartbeat_checkin.sh --status
+  captain/scripts/heartbeat_checkin.sh --check <email|calendar|mentions|weather|workspace|memory>
+EOF
 }
 
 ensure_state() {
@@ -40,6 +44,12 @@ PY
 }
 
 mark_check() {
+  local check_name="$1"
+  case "$check_name" in
+    email|calendar|mentions|weather|workspace|memory) ;;
+    *) echo "Invalid check type: $check_name" >&2; usage; exit 2 ;;
+  esac
+
   python3 - "$STATE_FILE" "$1" "$NOW" <<'PY'
 import json,sys
 p,k,now=sys.argv[1],sys.argv[2],int(sys.argv[3])
@@ -60,10 +70,10 @@ main() {
       ;;
     --check)
       [[ $# -eq 2 ]] || { usage; exit 1; }
-      case "$2" in
-        email|calendar|mentions|weather|workspace|memory) mark_check "$2" ;;
-        *) usage; exit 2 ;;
-      esac
+      mark_check "$2"
+      ;;
+    -h|--help)
+      usage
       ;;
     *)
       usage

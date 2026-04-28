@@ -104,8 +104,10 @@ fn is_step_line(line: &str) -> bool {
 }
 
 fn strip_step_prefix(line: &str) -> &str {
-    line.trim_start_matches(|c: char| c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ')')
-        .trim()
+    line.trim_start_matches(|c: char| {
+        c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ')'
+    })
+    .trim()
 }
 
 #[cfg(test)]
@@ -121,7 +123,10 @@ mod tests {
 
     #[test]
     fn parse_steps_uses_fallback_for_unstructured_lines() {
-        let steps = parse_steps("Architecture: improve reliability", &["src/a.rs".to_string()]);
+        let steps = parse_steps(
+            "Architecture: improve reliability",
+            &["src/a.rs".to_string()],
+        );
         assert_eq!(steps.len(), 1);
         assert!(steps[0]
             .title

@@ -194,7 +194,10 @@ new file mode 100644
 "#;
 
         let files = extract_touched_files(diff);
-        assert_eq!(files, vec!["new.txt", "old.txt", "src/added.rs", "src/gone.rs"]);
+        assert_eq!(
+            files,
+            vec!["new.txt", "old.txt", "src/added.rs", "src/gone.rs"]
+        );
     }
 
     #[test]
