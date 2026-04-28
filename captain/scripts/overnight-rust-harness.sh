@@ -10,6 +10,12 @@ BRANCH="${BRANCH:-main}"
 cd "$REPO_DIR"
 
 echo "[overnight-rust-harness] syncing $BRANCH at $(date -u +%FT%TZ)"
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "[overnight-rust-harness] dirty tree detected; resetting to HEAD"
+  git reset --hard HEAD
+  git clean -fd -- captain/harnesses/rust-harness/.harness captain/harnesses/rust-harness/runs || true
+fi
+
 git fetch origin --prune
 git checkout "$BRANCH"
 git pull --rebase origin "$BRANCH"
