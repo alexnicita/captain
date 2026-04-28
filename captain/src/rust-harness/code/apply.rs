@@ -5,7 +5,9 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
 pub struct GitApplyDiffApplier;
@@ -205,7 +207,48 @@ fn destructive_edit_reason(path: &str, content: &str, abs: &Path) -> Result<Opti
 fn write_patch(repo_path: &Path, patch: &str) -> Result<PathBuf> {
     let dir = repo_path.join(".harness/tmp");
     fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("llm-patch-{}.diff", now_unix()));
-    fs::write(&path, patch)?;
-    Ok(path)
+
+    for attempt in 0..8 {
+        let path = dir.join(format!(
+            "llm-patch-{}-{}-{}-{}.diff",
+            now_unix(),
+            std::process::id(),
+            nanos_since_epoch(),
+            attempt
+        ));
+
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(patch.as_bytes())?;
+                return Ok(path);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err.into()),
+        }
+    }
+
+    Err(anyhow!("failed to create unique patch file after retries"))
+}
+
+fn nanos_since_epoch() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_patch;
+
+    #[test]
+    fn write_patch_uses_unique_paths() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let p1 = write_patch(temp.path(), "diff --git a/a b/a").expect("write patch 1");
+        let p2 = write_patch(temp.path(), "diff --git a/b b/b").expect("write patch 2");
+        assert_ne!(p1, p2);
+        assert!(p1.exists());
+        assert!(p2.exists());
+    }
 }

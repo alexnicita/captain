@@ -43,7 +43,7 @@ class ChecklistStats:
 
     @property
     def all_done(self) -> bool:
-        return self.total > 0 and self.done == self.total
+        return self.done == self.total
 
 
 
@@ -82,7 +82,8 @@ def load_latest_run_dir() -> Path:
 
 def append_log(run_dir: Path, message: str) -> None:
     line = f"[{utc_now().isoformat()}] {message}\n"
-    (run_dir / "progress.log").open("a", encoding="utf-8").write(line)
+    with (run_dir / "progress.log").open("a", encoding="utf-8") as f:
+        f.write(line)
 
 
 def write_state(run_dir: Path, state: dict) -> None:
