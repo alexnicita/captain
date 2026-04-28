@@ -28,7 +28,10 @@ bash captain/scripts/setup-openclaw-captain.sh --help >/dev/null
 bash captain/scripts/captain-doctor.sh --help >/dev/null
 bash captain/scripts/setup-harness-env.sh --help >/dev/null
 bash captain/scripts/init-local-profile.sh >/dev/null || true
-bash captain/scripts/heartbeat_checkin.sh --status >/dev/null
-bash captain/scripts/heartbeat_checkin.sh --check workspace >/dev/null
+heartbeat_state="$(mktemp "${TMPDIR:-/tmp}/captain-heartbeat.XXXXXX")"
+rm -f "$heartbeat_state"
+trap 'rm -f "$heartbeat_state"' EXIT
+HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.sh --status >/dev/null
+HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.sh --check workspace >/dev/null
 
 echo "test_scripts: ok"

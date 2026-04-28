@@ -43,8 +43,7 @@ class ChecklistStats:
 
     @property
     def all_done(self) -> bool:
-        return self.done == self.total
-
+        return self.total > 0 and self.done == self.total
 
 
 def utc_now() -> datetime:
