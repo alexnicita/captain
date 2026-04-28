@@ -51,7 +51,7 @@ def test_parse_checklist_counts(mod, tmp_path: Path):
     assert stats.all_done is False
 
 
-def test_parse_checklist_empty_is_considered_done(mod, tmp_path: Path):
+def test_parse_checklist_empty_is_not_complete(mod, tmp_path: Path):
     checklist = tmp_path / "empty.md"
     checklist.write_text("\n# no checklist items\n", encoding="utf-8")
 
@@ -59,7 +59,7 @@ def test_parse_checklist_empty_is_considered_done(mod, tmp_path: Path):
     assert stats.total == 0
     assert stats.done == 0
     assert stats.pending == 0
-    assert stats.all_done is True
+    assert stats.all_done is False
 
 
 def test_load_latest_run_dir_missing_pointer_raises(mod):

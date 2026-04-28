@@ -9,4 +9,5 @@ pub mod provider;
 pub mod replay;
 pub mod runtime_gate;
 pub mod scheduler;
+pub mod task_ranking;
 pub mod tools;

@@ -48,7 +48,8 @@ fn effective_score(task: &TaskCandidate, cfg: RankingConfig, current_cycle: u64)
     let boost = (task.consecutive_misses as i64) * (cfg.miss_boost_per_cycle as i64);
     let mut score = task.priority as i64 + boost;
 
-    let remaining = cooldown_remaining(current_cycle, task.last_selected_cycle, cfg.cooldown_cycles);
+    let remaining =
+        cooldown_remaining(current_cycle, task.last_selected_cycle, cfg.cooldown_cycles);
     if remaining > 0 {
         // Strong penalty while cooling down. Keep deterministic ordering by still allowing tie-breaks.
         score -= (remaining as i64) * 1_000_000;
@@ -57,13 +58,22 @@ fn effective_score(task: &TaskCandidate, cfg: RankingConfig, current_cycle: u64)
     score
 }
 
-pub fn rank_tasks(tasks: &[TaskCandidate], cfg: RankingConfig, current_cycle: u64) -> Vec<TaskCandidate> {
+pub fn rank_tasks(
+    tasks: &[TaskCandidate],
+    cfg: RankingConfig,
+    current_cycle: u64,
+) -> Vec<TaskCandidate> {
     let mut ranked = tasks.to_vec();
     ranked.sort_by(|a, b| compare_tasks(a, b, cfg, current_cycle));
     ranked
 }
 
-fn compare_tasks(a: &TaskCandidate, b: &TaskCandidate, cfg: RankingConfig, current_cycle: u64) -> Ordering {
+fn compare_tasks(
+    a: &TaskCandidate,
+    b: &TaskCandidate,
+    cfg: RankingConfig,
+    current_cycle: u64,
+) -> Ordering {
     let sa = effective_score(a, cfg, current_cycle);
     let sb = effective_score(b, cfg, current_cycle);
 
@@ -73,7 +83,11 @@ fn compare_tasks(a: &TaskCandidate, b: &TaskCandidate, cfg: RankingConfig, curre
         .then_with(|| a.id.cmp(&b.id))
 }
 
-pub fn select_best_task(tasks: &[TaskCandidate], cfg: RankingConfig, current_cycle: u64) -> Option<TaskCandidate> {
+pub fn select_best_task(
+    tasks: &[TaskCandidate],
+    cfg: RankingConfig,
+    current_cycle: u64,
+) -> Option<TaskCandidate> {
     rank_tasks(tasks, cfg, current_cycle).into_iter().next()
 }
 

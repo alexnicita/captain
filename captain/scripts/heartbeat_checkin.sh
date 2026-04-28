@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STATE_FILE="$ROOT/memory/heartbeat-state.json"
+STATE_FILE="${HEARTBEAT_STATE_FILE:-$ROOT/memory/heartbeat-state.json}"
 NOW="$(date -u +%s)"
 
 usage() {
