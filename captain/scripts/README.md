@@ -9,3 +9,4 @@ Key scripts:
 - `init-local-profile.sh`
 - `storage_guard.sh`
 - `heartbeat_checkin.sh` (tracks heartbeat check freshness in `memory/heartbeat-state.json`)
+- `overnight-rust-harness.sh` (pull latest + run 3h harness safely)

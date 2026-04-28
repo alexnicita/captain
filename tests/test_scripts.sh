@@ -11,6 +11,7 @@ scripts=(
   "captain/scripts/setup-harness-env.sh"
   "captain/scripts/init-local-profile.sh"
   "captain/scripts/storage_guard.sh"
+  "captain/scripts/overnight-rust-harness.sh"
   "captain/harnesses/hourly-harness/run.sh"
   "captain/harnesses/rust-harness/start.sh"
   "docs/examples/safe-pr-review.sh"
