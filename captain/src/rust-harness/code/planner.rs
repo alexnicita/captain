@@ -62,7 +62,7 @@ impl CodePlanner for ProviderCodePlanner {
 fn parse_steps(message: &str, target_files: &[String]) -> Vec<ArchitecturePlanStep> {
     let mut steps = Vec::new();
 
-    for line in message.lines().take(6) {
+    for line in message.lines().take(20) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -73,6 +73,9 @@ fn parse_steps(message: &str, target_files: &[String]) -> Vec<ArchitecturePlanSt
                 rationale: "generated from provider planning response".to_string(),
                 expected_files: target_files.to_vec(),
             });
+            if steps.len() >= 6 {
+                break;
+            }
         }
     }
 
@@ -123,5 +126,14 @@ mod tests {
         assert!(steps[0]
             .title
             .contains("Implement smallest viable change that advances objective"));
+    }
+
+    #[test]
+    fn parse_steps_finds_bullets_after_intro_lines() {
+        let msg = "Plan:\nContext line\n- Step one\n- Step two";
+        let steps = parse_steps(msg, &["src/a.rs".to_string()]);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].title, "Step one");
+        assert_eq!(steps[1].title, "Step two");
     }
 }
