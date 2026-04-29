@@ -684,8 +684,9 @@ fn parse_executor_preset(input: &str) -> Result<ExecutorPreset> {
         "shell" => Ok(ExecutorPreset::Shell),
         "cargo" => Ok(ExecutorPreset::Cargo),
         "openclaw" => Ok(ExecutorPreset::OpenClaw),
+        "hermes" => Ok(ExecutorPreset::Hermes),
         other => Err(anyhow!(
-            "invalid --executor '{other}' (expected 'shell', 'cargo', or 'openclaw')"
+            "invalid --executor '{other}' (expected 'shell', 'cargo', 'openclaw', or 'hermes')"
         )),
     }
 }
@@ -841,6 +842,14 @@ mod tests {
     #[test]
     fn parse_executor_preset_rejects_invalid() {
         assert!(parse_executor_preset("python").is_err());
+    }
+
+    #[test]
+    fn parse_executor_preset_accepts_hermes() {
+        assert!(matches!(
+            parse_executor_preset("hermes").unwrap(),
+            ExecutorPreset::Hermes
+        ));
     }
 
     #[test]

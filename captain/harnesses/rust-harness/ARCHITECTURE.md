@@ -37,6 +37,7 @@
   - timeboxed coding loop command (`code --repo ... --time ...`)
   - trait-based executor abstraction (`WorkExecutor`)
   - shell/cargo command executor with allowlisted policy
+  - shared agent CLI adapter for OpenClaw and Hermes JSON-edit runs
   - cycle hooks (task output + commit/push)
   - optional user prompt plumbed through cycle context and logs
 - `events.rs`

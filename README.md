@@ -11,7 +11,7 @@ The operating idea is simple: agents can work longer when the run has a flight r
 - Runs timeboxed coding sessions against a target repo.
 - Emits stable JSONL events for replay, eval, and regression checks.
 - Enforces command allowlists, runtime limits, no-op detection, and commit-quality gates.
-- Integrates with OpenClaw as an executor while preserving a stable local CLI runner.
+- Integrates with OpenClaw or Hermes as agent CLI executors while preserving a stable local CLI runner.
 - Keeps personal/operator files private by default.
 
 ## Five-Minute Start
@@ -37,6 +37,7 @@ The canonical interface is intentionally stable:
 
 ```bash
 captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor openclaw
+captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor hermes
 ```
 
 ## Why This Exists
@@ -70,8 +71,8 @@ OpenClaw and similar agents make it easy to give a model real tools and persiste
 
 - Node.js 24 recommended, Node.js 22.14+ minimum.
 - Rust 1.76+ for `captain/harnesses/rust-harness`.
-- OpenClaw CLI for `--executor openclaw`.
-- A model credential via `OPENAI_API_KEY` or OpenClaw auth profiles.
+- OpenClaw CLI for `--executor openclaw`, or Hermes CLI for `--executor hermes`.
+- A model credential via `OPENAI_API_KEY` / OpenClaw auth profiles, or Hermes auth/config for Hermes runs.
 
 ## Verification
 

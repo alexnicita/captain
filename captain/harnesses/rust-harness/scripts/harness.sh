@@ -33,7 +33,7 @@ Required:
   --time                Duration (e.g. 3600, 45m, 1h)
 
 Optional:
-  --executor            cargo|shell|openclaw (default: cargo)
+  --executor            cargo|shell|openclaw|hermes (default: cargo)
   --heartbeat-sec       Coding heartbeat interval (default: 30)
   --cycle-pause-sec     Pause between cycles in seconds (default: 2)
   --prompt              Optional user-session prompt string
@@ -160,10 +160,12 @@ PY
   fi
 fi
 
-if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+if [[ -z "${OPENAI_API_KEY:-}" && "$EXECUTOR" != "hermes" ]]; then
   echo "[harness] error: OPENAI_API_KEY is unset and no OpenClaw auth profile credential was found." >&2
   echo "[harness] hint: run 'openclaw models status --json' to verify configured auth profiles." >&2
   exit 4
+elif [[ -z "${OPENAI_API_KEY:-}" && "$EXECUTOR" == "hermes" ]]; then
+  echo "[harness] OPENAI_API_KEY is unset; hermes executor will use Hermes auth/config."
 fi
 
 "$ROOT_DIR/scripts/check_toolchain.sh"

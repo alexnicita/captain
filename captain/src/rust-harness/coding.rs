@@ -26,9 +26,9 @@ use tokio::time::{sleep, Duration};
 const OUTPUT_TAIL_LIMIT: usize = 4_000;
 const TASK_NO_DIFF_ESCALATION_THRESHOLD: u64 = 2;
 const CODEGEN_MAX_ATTEMPTS: usize = 3;
-const OPENCLAW_ATTEMPTS_PER_CYCLE: usize = 1;
-const OPENCLAW_PLAN_TIMEOUT_SEC: u64 = 240;
-const OPENCLAW_CODE_TIMEOUT_SEC: u64 = 600;
+const AGENT_CLI_ATTEMPTS_PER_CYCLE: usize = 1;
+const AGENT_CLI_PLAN_TIMEOUT_SEC: u64 = 240;
+const AGENT_CLI_CODE_TIMEOUT_SEC: u64 = 600;
 const DIFF_RUBRIC_REJECTION_STREAK_LIMIT: u64 = 3;
 const PRECOMMIT_GATE_SKIP_STREAK_LIMIT: u64 = 2;
 const COMMIT_WATCHDOG_SEC: u64 = 600;
@@ -39,6 +39,7 @@ pub enum ExecutorPreset {
     Shell,
     Cargo,
     OpenClaw,
+    Hermes,
 }
 
 #[derive(Debug, Clone)]
@@ -208,13 +209,188 @@ struct WatchdogRecovery {
 }
 
 #[derive(Debug, Clone)]
-struct OpenClawExecutionPlan {
+struct AgentExecutionPlan {
     target_files: Vec<String>,
     target_symbols: Vec<String>,
     behavior_delta: String,
     test_delta: String,
     commit_subject: String,
     raw_json: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentCliKind {
+    OpenClaw,
+    Hermes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AgentCli {
+    kind: AgentCliKind,
+}
+
+impl AgentCli {
+    fn openclaw() -> Self {
+        Self {
+            kind: AgentCliKind::OpenClaw,
+        }
+    }
+
+    fn hermes() -> Self {
+        Self {
+            kind: AgentCliKind::Hermes,
+        }
+    }
+
+    fn for_preset(preset: ExecutorPreset) -> Option<Self> {
+        match preset {
+            ExecutorPreset::OpenClaw => Some(Self::openclaw()),
+            ExecutorPreset::Hermes => Some(Self::hermes()),
+            ExecutorPreset::Shell | ExecutorPreset::Cargo => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self.kind {
+            AgentCliKind::OpenClaw => "openclaw",
+            AgentCliKind::Hermes => "hermes",
+        }
+    }
+
+    fn binary(self) -> &'static str {
+        self.name()
+    }
+
+    fn argv_preview(self) -> Vec<String> {
+        match self.kind {
+            AgentCliKind::OpenClaw => vec!["openclaw".to_string(), "agent".to_string()],
+            AgentCliKind::Hermes => vec!["hermes".to_string(), "chat".to_string()],
+        }
+    }
+
+    fn command_label(self, label: &str) -> String {
+        match self.kind {
+            AgentCliKind::OpenClaw => format!("openclaw agent {label}"),
+            AgentCliKind::Hermes => format!("hermes chat {label}"),
+        }
+    }
+
+    async fn run_text_once(
+        self,
+        repo_path: &Path,
+        prompt: &str,
+        session_id: &str,
+        timeout_sec: u64,
+    ) -> Result<String> {
+        let (payload, _) = self
+            .run_once_with_timeout(repo_path, prompt, session_id, timeout_sec)
+            .await?;
+        Ok(payload)
+    }
+
+    async fn run_code_once(
+        self,
+        repo_path: &Path,
+        prompt: &str,
+        session_id: &str,
+    ) -> Result<(String, String)> {
+        self.run_once_with_timeout(repo_path, prompt, session_id, AGENT_CLI_CODE_TIMEOUT_SEC)
+            .await
+    }
+
+    async fn run_once_with_timeout(
+        self,
+        repo_path: &Path,
+        prompt: &str,
+        session_id: &str,
+        timeout_sec: u64,
+    ) -> Result<(String, String)> {
+        let mut command = self.command(prompt, session_id, timeout_sec);
+
+        let output = tokio::time::timeout(
+            Duration::from_secs(timeout_sec),
+            command.current_dir(repo_path).output(),
+        )
+        .await
+        .map_err(|_| anyhow!("{} agent timed out after {}s", self.name(), timeout_sec))?
+        .with_context(|| format!("failed to execute {} agent", self.name()))?;
+
+        let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+        if !output.status.success() {
+            return Err(anyhow!(
+                "{} agent exited with {}: {}",
+                self.name(),
+                output.status,
+                truncate_tail(&stderr_text)
+            ));
+        }
+
+        let payload = self
+            .extract_payload_text(&stdout_text)
+            .unwrap_or(stdout_text);
+        Ok((payload, stderr_text))
+    }
+
+    fn command(self, prompt: &str, session_id: &str, timeout_sec: u64) -> Command {
+        match self.kind {
+            AgentCliKind::OpenClaw => {
+                let mut command = Command::new("openclaw");
+                command
+                    .arg("agent")
+                    .arg("--local")
+                    .arg("--agent")
+                    .arg("main")
+                    .arg("--session-id")
+                    .arg(session_id)
+                    .arg("--timeout")
+                    .arg(timeout_sec.to_string())
+                    .arg("--thinking")
+                    .arg("low")
+                    .arg("--json")
+                    .arg("--message")
+                    .arg(prompt);
+                command
+            }
+            AgentCliKind::Hermes => {
+                let toolsets = std::env::var("CAPTAIN_HERMES_TOOLSETS")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| "terminal,skills".to_string());
+
+                let mut command = Command::new("hermes");
+                command
+                    .arg("chat")
+                    .arg("--quiet")
+                    .arg("--source")
+                    .arg("captain-harness")
+                    .arg("--max-turns")
+                    .arg("90")
+                    .arg("--toolsets")
+                    .arg(toolsets)
+                    .arg("--pass-session-id")
+                    .arg("--yolo")
+                    .arg("-q")
+                    .arg(prompt);
+                command
+            }
+        }
+    }
+
+    fn extract_payload_text(self, stdout: &str) -> Option<String> {
+        match self.kind {
+            AgentCliKind::OpenClaw => extract_openclaw_payload_text(stdout),
+            AgentCliKind::Hermes => {
+                let trimmed = stdout.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -320,6 +496,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let noop_streak_limit = args.noop_streak_limit.max(1);
     let conformance_interval_unchanged = args.conformance_interval_unchanged.max(1);
 
+    let agent_cli = AgentCli::for_preset(args.preset);
     let executor = build_executor(&args)?;
     if !executor.policy().allows("git") {
         return Err(anyhow!(
@@ -417,18 +594,19 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         })),
     )?;
 
-    if executor.name() == "openclaw" {
+    if let Some(agent_cli) = agent_cli.as_ref() {
         let bootstrap_prompt = format!(
             "Harness run bootstrap. Keep persistent context for this run. User objective: {}",
             user_prompt.clone().unwrap_or_default()
         );
-        let _ = run_openclaw_agent_text_once(
-            &repo_path,
-            &bootstrap_prompt,
-            &run_session_id,
-            OPENCLAW_PLAN_TIMEOUT_SEC,
-        )
-        .await;
+        let _ = agent_cli
+            .run_text_once(
+                &repo_path,
+                &bootstrap_prompt,
+                &run_session_id,
+                AGENT_CLI_PLAN_TIMEOUT_SEC,
+            )
+            .await;
     }
 
     let mut cycles_total = 0u64;
@@ -506,6 +684,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     user_prompt.as_deref(),
                     args.research_budget_sec,
                     args.planning_budget_sec,
+                    agent_cli.as_ref(),
                 )
                 .await?;
             }
@@ -572,7 +751,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 &ctx,
                 selected_task.as_ref(),
                 user_prompt.as_deref(),
-                args.preset,
+                agent_cli.as_ref(),
             )
             .await
         } else {
@@ -1061,8 +1240,12 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
             },
             "shell",
         ),
-        ExecutorPreset::OpenClaw => {
-            policy.allowlisted_commands.insert("openclaw".to_string());
+        ExecutorPreset::OpenClaw | ExecutorPreset::Hermes => {
+            let agent_cli = AgentCli::for_preset(args.preset)
+                .expect("agent executor preset must resolve to agent cli");
+            policy
+                .allowlisted_commands
+                .insert(agent_cli.binary().to_string());
             (
                 if args.plan_cmd.is_empty() {
                     vec!["git status --short".to_string()]
@@ -1079,7 +1262,7 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
                 } else {
                     args.verify_cmd.clone()
                 },
-                "openclaw",
+                agent_cli.name(),
             )
         }
     };
@@ -1119,7 +1302,7 @@ async fn run_codegen_stage(
     ctx: &CycleContext,
     selected_task: Option<&FeatureTask>,
     user_prompt: Option<&str>,
-    preset: ExecutorPreset,
+    agent_cli: Option<&AgentCli>,
 ) -> StageResult {
     let stage_start = Instant::now();
 
@@ -1142,8 +1325,8 @@ async fn run_codegen_stage(
         };
     };
 
-    if matches!(preset, ExecutorPreset::OpenClaw) {
-        return run_openclaw_codegen_stage(ctx, selected_task, user_prompt).await;
+    if let Some(agent_cli) = agent_cli {
+        return run_agent_cli_codegen_stage(*agent_cli, ctx, selected_task, user_prompt).await;
     }
 
     let repo_snapshot = match build_repo_snapshot(&ctx.repo_path, selected_task, user_prompt).await
@@ -1266,26 +1449,29 @@ async fn run_codegen_stage(
     }
 }
 
-async fn run_openclaw_codegen_stage(
+async fn run_agent_cli_codegen_stage(
+    agent_cli: AgentCli,
     ctx: &CycleContext,
     selected_task: &FeatureTask,
     user_prompt: Option<&str>,
 ) -> StageResult {
     let stage_start = Instant::now();
+    let agent_name = agent_cli.name();
+    let agent_argv = agent_cli.argv_preview();
 
     let repo_snapshot = match build_repo_snapshot(&ctx.repo_path, selected_task, user_prompt).await
     {
         Ok(snapshot) => snapshot,
         Err(err) => {
-            let message = format!("failed to build repo snapshot for openclaw agent: {err}");
+            let message = format!("failed to build repo snapshot for {agent_name} agent: {err}");
             return StageResult {
                 stage: WorkStage::Act,
                 success: false,
                 error: Some(message.clone()),
                 commands: vec![CommandExecution {
                     stage: WorkStage::Act,
-                    command: "openclaw agent codegen".to_string(),
-                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    command: agent_cli.command_label("codegen"),
+                    argv: agent_argv.clone(),
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -1301,28 +1487,29 @@ async fn run_openclaw_codegen_stage(
     let mut attempts = Vec::new();
     let mut last_error: Option<String> = None;
 
-    let plan_prompt = build_openclaw_plan_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
-    let validated_plan = match run_openclaw_agent_text_once(
-        &ctx.repo_path,
-        &plan_prompt,
-        &ctx.run_session_id,
-        OPENCLAW_PLAN_TIMEOUT_SEC,
-    )
-    .await
+    let plan_prompt = build_agent_cli_plan_prompt(ctx, selected_task, user_prompt, &repo_snapshot);
+    let validated_plan = match agent_cli
+        .run_text_once(
+            &ctx.repo_path,
+            &plan_prompt,
+            &ctx.run_session_id,
+            AGENT_CLI_PLAN_TIMEOUT_SEC,
+        )
+        .await
     {
-        Ok(plan_text) => match parse_openclaw_execution_plan(&plan_text) {
+        Ok(plan_text) => match parse_agent_execution_plan(&plan_text) {
             Some(plan) => plan,
             None => {
                 return StageResult {
                     stage: WorkStage::Act,
                     success: false,
-                    error: Some(
-                        "openclaw plan pass did not return valid execution plan json".to_string(),
-                    ),
+                    error: Some(format!(
+                        "{agent_name} plan pass did not return valid execution plan json"
+                    )),
                     commands: vec![CommandExecution {
                         stage: WorkStage::Act,
-                        command: "openclaw planning pass".to_string(),
-                        argv: vec!["openclaw".to_string(), "agent".to_string()],
+                        command: agent_cli.command_label("planning pass"),
+                        argv: agent_argv.clone(),
                         success: false,
                         exit_code: Some(1),
                         duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -1337,11 +1524,11 @@ async fn run_openclaw_codegen_stage(
             return StageResult {
                 stage: WorkStage::Act,
                 success: false,
-                error: Some(format!("openclaw planning pass failed: {err}")),
+                error: Some(format!("{agent_name} planning pass failed: {err}")),
                 commands: vec![CommandExecution {
                     stage: WorkStage::Act,
-                    command: "openclaw planning pass".to_string(),
-                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    command: agent_cli.command_label("planning pass"),
+                    argv: agent_argv.clone(),
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -1353,8 +1540,8 @@ async fn run_openclaw_codegen_stage(
         }
     };
 
-    for attempt in 1..=OPENCLAW_ATTEMPTS_PER_CYCLE {
-        let prompt = build_openclaw_json_only_prompt_with_attempt(
+    for attempt in 1..=AGENT_CLI_ATTEMPTS_PER_CYCLE {
+        let prompt = build_agent_cli_json_only_prompt_with_attempt(
             ctx,
             selected_task,
             user_prompt,
@@ -1365,38 +1552,40 @@ async fn run_openclaw_codegen_stage(
         );
 
         let prompt_path =
-            write_openclaw_prompt_artifact(&ctx.repo_path, ctx.cycle, attempt, &prompt).ok();
-        let (payload, stderr_text) = match run_openclaw_agent_once(
-            &ctx.repo_path,
-            &prompt,
-            &ctx.run_session_id,
-        )
-        .await
+            write_agent_cli_prompt_artifact(agent_cli, &ctx.repo_path, ctx.cycle, attempt, &prompt)
+                .ok();
+        let (payload, stderr_text) = match agent_cli
+            .run_code_once(&ctx.repo_path, &prompt, &ctx.run_session_id)
+            .await
         {
             Ok(result) => result,
             Err(err) => {
                 let message = err.to_string();
                 last_error = Some(message.clone());
                 attempts.push(CommandExecution {
-                        stage: WorkStage::Act,
-                        command: format!(
-                            "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
-                        ),
-                        argv: vec!["openclaw".to_string(), "agent".to_string()],
-                        success: false,
-                        exit_code: Some(1),
-                        duration_ms: stage_start.elapsed().as_millis() as u64,
-                        stdout_tail: String::new(),
-                        stderr_tail: truncate_tail(&message),
-                        error: Some(message),
-                    });
+                    stage: WorkStage::Act,
+                    command: format!(
+                        "{} (attempt {attempt}/{AGENT_CLI_ATTEMPTS_PER_CYCLE})",
+                        agent_cli.command_label("json edits")
+                    ),
+                    argv: agent_argv.clone(),
+                    success: false,
+                    exit_code: Some(1),
+                    duration_ms: stage_start.elapsed().as_millis() as u64,
+                    stdout_tail: String::new(),
+                    stderr_tail: truncate_tail(&message),
+                    error: Some(message),
+                });
                 continue;
             }
         };
 
         let proposal = match extract_json_edits_payload(&payload).map(|(paths, sentinel)| {
             CodeDiffProposal {
-                summary: format!("openclaw agent json edits touching {} files", paths.len()),
+                summary: format!(
+                    "{agent_name} agent json edits touching {} files",
+                    paths.len()
+                ),
                 unified_diff: sentinel,
                 touched_files: paths,
             }
@@ -1404,14 +1593,15 @@ async fn run_openclaw_codegen_stage(
             Some(proposal) => proposal,
             None => {
                 let message =
-                    "openclaw agent response did not contain valid json edits payload".to_string();
+                    format!("{agent_name} agent response did not contain valid json edits payload");
                 last_error = Some(message.clone());
                 attempts.push(CommandExecution {
                     stage: WorkStage::Act,
                     command: format!(
-                        "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
+                        "{} (attempt {attempt}/{AGENT_CLI_ATTEMPTS_PER_CYCLE})",
+                        agent_cli.command_label("json edits")
                     ),
-                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    argv: agent_argv.clone(),
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -1432,14 +1622,15 @@ async fn run_openclaw_codegen_stage(
         let apply = match applier.apply_diff(&ctx.repo_path, &proposal).await {
             Ok(result) => result,
             Err(err) => {
-                let message = format!("failed to apply openclaw-generated json edits: {err}");
+                let message = format!("failed to apply {agent_name}-generated json edits: {err}");
                 last_error = Some(message.clone());
                 attempts.push(CommandExecution {
                     stage: WorkStage::Act,
                     command: format!(
-                        "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
+                        "{} (attempt {attempt}/{AGENT_CLI_ATTEMPTS_PER_CYCLE})",
+                        agent_cli.command_label("json edits")
                     ),
-                    argv: vec!["openclaw".to_string(), "agent".to_string()],
+                    argv: agent_argv.clone(),
                     success: false,
                     exit_code: Some(1),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -1460,12 +1651,12 @@ async fn run_openclaw_codegen_stage(
         let success = apply.applied && !apply.changed_files.is_empty();
         let detail = if success {
             format!(
-                "openclaw agent json edits applied touching {} files",
+                "{agent_name} agent json edits applied touching {} files",
                 apply.changed_files.len()
             )
         } else {
             format!(
-                "openclaw agent returned unapplied/empty json edits: {}",
+                "{agent_name} agent returned unapplied/empty json edits: {}",
                 apply.detail
             )
         };
@@ -1473,9 +1664,10 @@ async fn run_openclaw_codegen_stage(
         attempts.push(CommandExecution {
             stage: WorkStage::Act,
             command: format!(
-                "openclaw agent --local --agent main (attempt {attempt}/{OPENCLAW_ATTEMPTS_PER_CYCLE})"
+                "{} (attempt {attempt}/{AGENT_CLI_ATTEMPTS_PER_CYCLE})",
+                agent_cli.command_label("json edits")
             ),
-            argv: vec!["openclaw".to_string(), "agent".to_string()],
+            argv: agent_argv.clone(),
             success,
             exit_code: Some(if success { 0 } else { 1 }),
             duration_ms: stage_start.elapsed().as_millis() as u64,
@@ -1511,7 +1703,7 @@ async fn run_openclaw_codegen_stage(
         stage: WorkStage::Act,
         success: false,
         error: Some(
-            last_error.unwrap_or_else(|| "openclaw json codegen failed after retries".to_string()),
+            last_error.unwrap_or_else(|| format!("{agent_name} json codegen failed after retries")),
         ),
         commands: attempts,
     }
@@ -1590,84 +1782,7 @@ fn parallel_search_script_path() -> PathBuf {
         .join("tools/parallel-search.js")
 }
 
-async fn run_openclaw_agent_text_once(
-    repo_path: &Path,
-    prompt: &str,
-    session_id: &str,
-    timeout_sec: u64,
-) -> Result<String> {
-    let output = Command::new("openclaw")
-        .arg("agent")
-        .arg("--local")
-        .arg("--agent")
-        .arg("main")
-        .arg("--session-id")
-        .arg(session_id)
-        .arg("--timeout")
-        .arg(timeout_sec.to_string())
-        .arg("--thinking")
-        .arg("low")
-        .arg("--json")
-        .arg("--message")
-        .arg(prompt)
-        .current_dir(repo_path)
-        .output()
-        .await
-        .context("failed to execute openclaw agent")?;
-
-    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
-    if !output.status.success() {
-        return Err(anyhow!(
-            "openclaw agent exited with {}: {}",
-            output.status,
-            truncate_tail(&stderr_text)
-        ));
-    }
-
-    let payload = extract_openclaw_payload_text(&stdout_text).unwrap_or(stdout_text);
-    Ok(payload)
-}
-
-async fn run_openclaw_agent_once(
-    repo_path: &Path,
-    prompt: &str,
-    session_id: &str,
-) -> Result<(String, String)> {
-    let output = Command::new("openclaw")
-        .arg("agent")
-        .arg("--local")
-        .arg("--agent")
-        .arg("main")
-        .arg("--session-id")
-        .arg(session_id)
-        .arg("--timeout")
-        .arg(OPENCLAW_CODE_TIMEOUT_SEC.to_string())
-        .arg("--thinking")
-        .arg("low")
-        .arg("--json")
-        .arg("--message")
-        .arg(prompt)
-        .current_dir(repo_path)
-        .output()
-        .await
-        .context("failed to execute openclaw agent")?;
-
-    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
-    if !output.status.success() {
-        return Err(anyhow!(
-            "openclaw agent exited with {}: {}",
-            output.status,
-            truncate_tail(&stderr_text)
-        ));
-    }
-
-    let payload = extract_openclaw_payload_text(&stdout_text).unwrap_or(stdout_text);
-    Ok((payload, stderr_text))
-}
-
-fn build_openclaw_plan_prompt(
+fn build_agent_cli_plan_prompt(
     ctx: &CycleContext,
     selected_task: &FeatureTask,
     user_prompt: Option<&str>,
@@ -1687,7 +1802,7 @@ fn build_openclaw_plan_prompt(
     )
 }
 
-fn parse_openclaw_execution_plan(message: &str) -> Option<OpenClawExecutionPlan> {
+fn parse_agent_execution_plan(message: &str) -> Option<AgentExecutionPlan> {
     let trimmed = message.trim();
     let candidate = if trimmed.starts_with("```") {
         let start = trimmed.find('{')?;
@@ -1728,7 +1843,7 @@ fn parse_openclaw_execution_plan(message: &str) -> Option<OpenClawExecutionPlan>
     }
 
     let raw_json = serde_json::to_string_pretty(&value).ok()?;
-    Some(OpenClawExecutionPlan {
+    Some(AgentExecutionPlan {
         target_files,
         target_symbols,
         behavior_delta,
@@ -1738,12 +1853,12 @@ fn parse_openclaw_execution_plan(message: &str) -> Option<OpenClawExecutionPlan>
     })
 }
 
-fn build_openclaw_json_only_prompt_with_attempt(
+fn build_agent_cli_json_only_prompt_with_attempt(
     ctx: &CycleContext,
     selected_task: &FeatureTask,
     user_prompt: Option<&str>,
     repo_snapshot: &str,
-    validated_plan: &OpenClawExecutionPlan,
+    validated_plan: &AgentExecutionPlan,
     attempt: usize,
     previous_error: Option<&str>,
 ) -> String {
@@ -1755,7 +1870,7 @@ fn build_openclaw_json_only_prompt_with_attempt(
         "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nValidated execution plan (must follow exactly):\n{validated_plan}\n\nPlan summary:\n- target_files: {target_files}\n- target_symbols: {target_symbols}\n- behavior_delta: {behavior_delta}\n- test_delta: {test_delta}\n- commit_subject: {commit_subject}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
         cycle = ctx.cycle,
         attempt = attempt,
-        attempt_limit = OPENCLAW_ATTEMPTS_PER_CYCLE,
+        attempt_limit = AGENT_CLI_ATTEMPTS_PER_CYCLE,
         task = selected_task.title,
         source = selected_task.source,
         line = selected_task.selected_line,
@@ -1811,16 +1926,20 @@ fn load_latest_research_context(repo_path: &Path) -> String {
     }
 }
 
-fn write_openclaw_prompt_artifact(
+fn write_agent_cli_prompt_artifact(
+    agent_cli: AgentCli,
     repo_path: &Path,
     cycle: u64,
     attempt: usize,
     prompt: &str,
 ) -> Result<String> {
     let dir = repo_path.join(".harness/supercycle/prompts");
-    fs::create_dir_all(&dir).context("failed to create openclaw prompt artifact dir")?;
-    let path = dir.join(format!("cycle-{cycle:04}-attempt-{attempt}.prompt.txt"));
-    fs::write(&path, prompt).context("failed to write openclaw prompt artifact")?;
+    fs::create_dir_all(&dir).context("failed to create agent prompt artifact dir")?;
+    let path = dir.join(format!(
+        "cycle-{cycle:04}-{}-attempt-{attempt}.prompt.txt",
+        agent_cli.name()
+    ));
+    fs::write(&path, prompt).context("failed to write agent prompt artifact")?;
     Ok(path.display().to_string())
 }
 
@@ -2846,6 +2965,7 @@ async fn run_supercycle_planning(
     user_prompt: Option<&str>,
     research_budget_sec: u64,
     planning_budget_sec: u64,
+    agent_cli: Option<&AgentCli>,
 ) -> Result<()> {
     let planning_dir = repo_path.join(".harness/supercycle");
     fs::create_dir_all(&planning_dir)?;
@@ -2869,6 +2989,8 @@ async fn run_supercycle_planning(
 
     let research_doc = if research_budget_sec > 0 {
         let timeout_sec = research_budget_sec.clamp(30, 600);
+        let fallback_agent = agent_cli.copied().unwrap_or_else(AgentCli::openclaw);
+        let fallback_agent_name = fallback_agent.name();
         if std::env::var("PARALLEL_API_KEY")
             .ok()
             .filter(|s| !s.trim().is_empty())
@@ -2878,32 +3000,28 @@ async fn run_supercycle_planning(
                 Ok(text) if !text.trim().is_empty() => text,
                 Ok(_) => "(parallel research returned empty output)".to_string(),
                 Err(err) => {
-                    match run_openclaw_agent_text_once(
-                        repo_path,
-                        &research_prompt,
-                        run_session_id,
-                        timeout_sec,
-                    )
-                    .await
+                    match fallback_agent
+                        .run_text_once(repo_path, &research_prompt, run_session_id, timeout_sec)
+                        .await
                     {
                         Ok(text) if !text.trim().is_empty() => {
                             format!("(parallel fallback: {err})\n\n{text}")
                         }
-                        Ok(_) => format!("(parallel failed: {err}; openclaw fallback empty)"),
-                        Err(err2) => {
-                            format!("(research phase failed: parallel={err}; openclaw={err2})")
+                        Ok(_) => {
+                            format!(
+                                "(parallel failed: {err}; {fallback_agent_name} fallback empty)"
+                            )
                         }
+                        Err(err2) => format!(
+                            "(research phase failed: parallel={err}; {fallback_agent_name}={err2})"
+                        ),
                     }
                 }
             }
         } else {
-            match run_openclaw_agent_text_once(
-                repo_path,
-                &research_prompt,
-                run_session_id,
-                timeout_sec,
-            )
-            .await
+            match fallback_agent
+                .run_text_once(repo_path, &research_prompt, run_session_id, timeout_sec)
+                .await
             {
                 Ok(text) if !text.trim().is_empty() => text,
                 Ok(_) => "(research phase returned empty output)".to_string(),
@@ -2918,7 +3036,7 @@ async fn run_supercycle_planning(
     fs::write(
         &architecture,
         format!(
-            "# ARCH_REMAP cycle {cycle}\n\n## Goal\n{prompt}\n\n## Research brief\nSee: `{}`\n\n## Subsystems\n- runtime loop + phase state machine\n- task synthesis + ranking\n- openclaw execution adapter\n- quality + commit rubric\n\n## Candidate remaps\n1. Extract supercycle planner from coding.rs into dedicated module\n2. Introduce strict one-cycle gate with rollback\n3. Split quality rubric into reusable engine\n\n## Source index size\n{} files under src/\n",
+            "# ARCH_REMAP cycle {cycle}\n\n## Goal\n{prompt}\n\n## Research brief\nSee: `{}`\n\n## Subsystems\n- runtime loop + phase state machine\n- task synthesis + ranking\n- agent execution adapter\n- quality + commit rubric\n\n## Candidate remaps\n1. Extract supercycle planner from coding.rs into dedicated module\n2. Introduce strict one-cycle gate with rollback\n3. Split quality rubric into reusable engine\n\n## Source index size\n{} files under src/\n",
             research_result_path
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -3714,11 +3832,15 @@ async fn execute_command_line(
     command_handle
         .args(&argv[1..])
         .current_dir(&ctx.repo_path)
+        .env("HARNESS_CODING_CYCLE", ctx.cycle.to_string())
+        .env("HARNESS_CODING_STAGE", stage_label(stage))
         .env("OPENCLAW_CODING_CYCLE", ctx.cycle.to_string())
         .env("OPENCLAW_CODING_STAGE", stage_label(stage));
 
     if let Some(prompt) = ctx.user_prompt.as_deref() {
-        command_handle.env("OPENCLAW_USER_PROMPT", prompt);
+        command_handle
+            .env("HARNESS_USER_PROMPT", prompt)
+            .env("OPENCLAW_USER_PROMPT", prompt);
     }
 
     let output = command_handle.output().await;
@@ -3904,6 +4026,25 @@ mod tests {
         assert!(policy.allows("cargo"));
         assert!(policy.allows("git"));
         assert!(!policy.allows("rm"));
+    }
+
+    #[test]
+    fn agent_cli_maps_agent_presets_to_shared_adapter() {
+        let openclaw = AgentCli::for_preset(ExecutorPreset::OpenClaw).unwrap();
+        assert_eq!(openclaw.name(), "openclaw");
+        assert_eq!(
+            openclaw.argv_preview(),
+            vec!["openclaw".to_string(), "agent".to_string()]
+        );
+
+        let hermes = AgentCli::for_preset(ExecutorPreset::Hermes).unwrap();
+        assert_eq!(hermes.name(), "hermes");
+        assert_eq!(
+            hermes.argv_preview(),
+            vec!["hermes".to_string(), "chat".to_string()]
+        );
+
+        assert!(AgentCli::for_preset(ExecutorPreset::Cargo).is_none());
     }
 
     #[tokio::test]
