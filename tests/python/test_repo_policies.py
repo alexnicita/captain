@@ -34,6 +34,24 @@ def test_product_naming_explains_agent_harness_compatibility():
     assert "`agent-harness`** is the current Rust package/binary" in readme
 
 
+def test_readme_frontloads_captain_cli_for_agent_machines():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    front_matter = readme[:3500]
+
+    required_phrases = [
+        "Use Captain on an OpenClaw or Hermes machine",
+        "EC2 instance or MacBook",
+        "captain hermes \"fix the failing tests\"",
+        "captain openclaw \"implement the next scoped improvement\"",
+        "--dry-run",
+        "--push-each-cycle",
+        "Pushes are opt-in",
+        "export PATH=\"$PWD/captain/bin:$PATH\"",
+    ]
+    for phrase in required_phrases:
+        assert phrase in front_matter
+
+
 def test_work_toolset_defines_first_cycle_spec():
     work_dir = ROOT / "captain" / "harnesses" / "rust-harness" / "toolsets" / "work"
     spec = (work_dir / "cycle-spec.md").read_text(encoding="utf-8")

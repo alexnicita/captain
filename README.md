@@ -14,7 +14,9 @@ The operating idea is simple: agents can work longer when the run has a flight r
 - Integrates with OpenClaw or Hermes as agent CLI executors while preserving a stable local CLI runner.
 - Keeps personal/operator files private by default.
 
-## Five-Minute Start
+## Use Captain on an OpenClaw or Hermes machine
+
+Captain is for the machine where your agents already live: an EC2 instance or MacBook with OpenClaw, Hermes, or another coding-agent CLI installed. Add Captain to that box, put `captain` on `PATH`, and run agents through Captain when you want better control: timeboxes, logs, command policy, commit gates, replayable events, and opt-in pushes.
 
 ```bash
 git clone https://github.com/alexnicita/captain.git
@@ -24,22 +26,40 @@ bash captain/scripts/captain-doctor.sh
 export PATH="$PWD/captain/bin:$PATH"
 ```
 
-Run a governed one-hour coding session:
+Run Hermes through Captain:
+
+```bash
+captain hermes "fix the failing tests" \
+  --repo /path/to/target/repo \
+  --time 45m \
+  --runtime-log-file ./runs/hermes-runtime.log \
+  --commit-each-cycle
+```
+
+Run OpenClaw through Captain:
 
 ```bash
 captain openclaw "implement the next scoped improvement" \
   --repo /path/to/target/repo \
   --time 1h \
-  --runtime-log-file ./runs/runtime.log
+  --runtime-log-file ./runs/openclaw-runtime.log \
+  --commit-each-cycle
 ```
 
-The operator CLI is intentionally shaped around agent shortcuts:
+Preview the exact lower-level harness command without launching an agent:
 
 ```bash
-captain hermes "fix the failing tests" --repo <path> --time 45m --commit-each-cycle
-captain openclaw "implement feature X" --repo <path> --time 1h
-captain code --executor hermes --prompt "ship useful code" --repo <path> --time 30m
+captain hermes "ship useful code" --repo . --time 30m --dry-run
 ```
+
+Use explicit executor mode when building scripts or APIs around Captain:
+
+```bash
+captain code --executor hermes --prompt "ship useful code" --repo . --time 30m
+captain code --executor openclaw --prompt "review and improve this PR" --repo . --time 1h
+```
+
+Pushes are opt-in. `--commit-each-cycle` can create local commits; add `--push-each-cycle` only when you intentionally want Captain to push after successful committed cycles.
 
 These shortcuts route through the stable harness interface:
 
