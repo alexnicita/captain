@@ -32,3 +32,25 @@ def test_product_naming_explains_agent_harness_compatibility():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "Captain** is the product and repository" in readme
     assert "`agent-harness`** is the current Rust package/binary" in readme
+
+
+def test_work_toolset_defines_first_cycle_spec():
+    work_dir = ROOT / "captain" / "harnesses" / "rust-harness" / "toolsets" / "work"
+    spec = (work_dir / "cycle-spec.md").read_text(encoding="utf-8")
+    readme = (work_dir / "README.md").read_text(encoding="utf-8")
+
+    required_sections = [
+        "## Objective",
+        "## Inputs",
+        "## Constraints",
+        "## Cycle Steps",
+        "## Outputs",
+        "## Commit and Log Policy",
+        "## Acceptance Criteria",
+    ]
+    for section in required_sections:
+        assert section in spec
+
+    assert "customer-or-market-research" in spec
+    assert "No secrets or credentials" in spec
+    assert "cycle-spec.md" in readme
