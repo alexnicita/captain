@@ -19,12 +19,10 @@ The operating idea is simple: agents can work longer when the run has a flight r
 Captain is for the machine where your agents already live: an EC2 instance or MacBook with OpenClaw, Hermes, or another coding-agent CLI installed. Add Captain to that box, put `captain` on `PATH`, and run agents through Captain when you want better control: timeboxes, logs, command policy, commit gates, replayable events, and opt-in pushes.
 
 ```bash
-git clone https://github.com/alexnicita/captain.git
-cd captain
-bash captain/scripts/setup-openclaw-captain.sh
-bash captain/scripts/captain-doctor.sh
-export PATH="$PWD/captain/bin:$PATH"
+curl -fsSL https://raw.githubusercontent.com/alexnicita/captain/main/install.sh | bash
 ```
+
+The installer clones or updates Captain under `~/.captain`, links the `captain` command into `~/.local/bin`, and runs lightweight setup/doctor checks. If `~/.local/bin` is not already on your shell path, it prints the one `PATH` line to add.
 
 Run Hermes through Captain:
 

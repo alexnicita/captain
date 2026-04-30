@@ -41,15 +41,22 @@ def test_readme_frontloads_captain_cli_for_agent_machines():
     required_phrases = [
         "Use Captain on an OpenClaw or Hermes machine",
         "EC2 instance or MacBook",
+        "curl -fsSL https://raw.githubusercontent.com/alexnicita/captain/main/install.sh | bash",
         "captain hermes \"fix the failing tests\"",
         "captain openclaw \"implement the next scoped improvement\"",
         "--dry-run",
         "--push-each-cycle",
         "Pushes are opt-in",
+    ]
+    forbidden_phrases = [
+        "git clone https://github.com/alexnicita/captain.git",
+        "bash captain/scripts/setup-openclaw-captain.sh",
         "export PATH=\"$PWD/captain/bin:$PATH\"",
     ]
     for phrase in required_phrases:
         assert phrase in front_matter
+    for phrase in forbidden_phrases:
+        assert phrase not in front_matter
 
 
 def test_work_toolset_defines_first_cycle_spec():

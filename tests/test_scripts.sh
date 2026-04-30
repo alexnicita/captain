@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 scripts=(
+  "install.sh"
   "captain/bin/captain"
   "captain/scripts/heartbeat_checkin.sh"
   "captain/scripts/setup-openclaw-captain.sh"
