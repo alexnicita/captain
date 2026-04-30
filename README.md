@@ -21,19 +21,27 @@ git clone https://github.com/alexnicita/captain.git
 cd captain
 bash captain/scripts/setup-openclaw-captain.sh
 bash captain/scripts/captain-doctor.sh
+export PATH="$PWD/captain/bin:$PATH"
 ```
 
 Run a governed one-hour coding session:
 
 ```bash
-bash captain/harnesses/rust-harness/scripts/harness.sh \
+captain openclaw "implement the next scoped improvement" \
   --repo /path/to/target/repo \
   --time 1h \
-  --executor openclaw \
   --runtime-log-file ./runs/runtime.log
 ```
 
-The canonical interface is intentionally stable:
+The operator CLI is intentionally shaped around agent shortcuts:
+
+```bash
+captain hermes "fix the failing tests" --repo <path> --time 45m --commit-each-cycle
+captain openclaw "implement feature X" --repo <path> --time 1h
+captain code --executor hermes --prompt "ship useful code" --repo <path> --time 30m
+```
+
+These shortcuts route through the stable harness interface:
 
 ```bash
 captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor openclaw
