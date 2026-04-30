@@ -65,3 +65,27 @@ fn deterministic_subject_names_primary_changed_files() {
         "implement scoped code updates in src/coding.rs, tests/rust-harness/commit_subject_quality_gate_v2.rs"
     );
 }
+
+#[test]
+fn deterministic_subject_prioritizes_src_when_generated_docs_are_also_staged() {
+    let changed = vec![
+        "captain/harnesses/rust-harness/RUNBOOK.md".to_string(),
+        "captain/harnesses/rust-harness/toolsets/code/ROADMAP.md".to_string(),
+        "captain/src/dogfood_smoke.rs".to_string(),
+    ];
+
+    let subject = deterministic_subject_from_files(&changed);
+
+    assert!(
+        subject.contains("dogfood_smoke.rs"),
+        "subject should mention source scope, got {subject:?}"
+    );
+    assert!(
+        subject.starts_with("implement scoped code updates"),
+        "subject should classify mixed src/doc diffs as code work, got {subject:?}"
+    );
+    assert!(has_informative_subject_scope(
+        &subject,
+        &["captain/src/dogfood_smoke.rs"]
+    ));
+}
