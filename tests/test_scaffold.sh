@@ -18,6 +18,7 @@ required_paths=(
   "captain/harnesses/rust-harness/README.md"
   "docs/captain/README.md"
   "docs/captain/architecture/directory-map.md"
+  "docs/captain/security-threat-model.md"
   "docs/demo/90-second-demo.md"
   "docs/examples/safe-pr-review.sh"
   "captain/knowledge/README.md"

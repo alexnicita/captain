@@ -2,7 +2,8 @@
 mod commit_subject_quality;
 
 use commit_subject_quality::{
-    has_informative_subject_scope, is_generic_subject, normalize_scope_token,
+    deterministic_subject_from_files, has_informative_subject_scope, is_generic_subject,
+    normalize_scope_token,
 };
 
 #[test]
@@ -50,4 +51,17 @@ fn accepts_dotted_stem_scope_variant() {
     let changed = ["src/runtime_gate.v2.rs"];
     let subject = "fix(runtime-gate-v2): preserve parsing compatibility";
     assert!(has_informative_subject_scope(subject, &changed));
+}
+
+#[test]
+fn deterministic_subject_names_primary_changed_files() {
+    let changed = vec![
+        "src/coding.rs".to_string(),
+        "tests/rust-harness/commit_subject_quality_gate_v2.rs".to_string(),
+    ];
+
+    assert_eq!(
+        deterministic_subject_from_files(&changed),
+        "implement scoped code updates in src/coding.rs, tests/rust-harness/commit_subject_quality_gate_v2.rs"
+    );
 }
