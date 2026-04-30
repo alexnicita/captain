@@ -17,29 +17,56 @@ ensure_state() {
   mkdir -p "$(dirname "$STATE_FILE")"
   if [[ ! -f "$STATE_FILE" ]]; then
     cat >"$STATE_FILE" <<'JSON'
-{"lastChecks":{"email":null,"calendar":null,"mentions":null,"weather":null,"workspace":null,"memory":null}}
+{
+  "lastChecks": {
+    "email": null,
+    "calendar": null,
+    "mentions": null,
+    "weather": null,
+    "workspace": null,
+    "memory": null
+  }
+}
 JSON
   fi
 }
 
 print_status() {
   python3 - "$STATE_FILE" "$NOW" <<'PY'
-import json,sys
-p,now=sys.argv[1],int(sys.argv[2])
-j=json.load(open(p,'r',encoding='utf-8'))
-c=j.get('lastChecks',{})
-th={'email':21600,'calendar':21600,'mentions':21600,'weather':43200,'workspace':28800,'memory':86400}
+import json, sys
+state_path = sys.argv[1]
+now = int(sys.argv[2])
+with open(state_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+checks = data.get('lastChecks', {})
+thresholds = {
+    'email': 6*3600,
+    'calendar': 6*3600,
+    'mentions': 6*3600,
+    'weather': 12*3600,
+    'workspace': 8*3600,
+    'memory': 24*3600,
+}
+
+def age(ts):
+    if ts is None:
+        return 'never'
+    v = now - int(ts)
+    return f"{v//3600}h{(v%3600)//60:02d}m ago"
+
 print('heartbeat state:')
-d=[]
-for k in ['email','calendar','mentions','weather','workspace','memory']:
-    t=c.get(k)
-    due=(t is None) or (now-int(t)>=th[k])
-    age='never' if t is None else f"{(now-int(t))//3600}h{((now-int(t))%3600)//60:02d}m ago"
-    print(f"- {k:9s} {'DUE' if due else 'ok '}  last={age}")
-    if due:
-        d.append(k)
-print('\nnext suggested check:')
-print(f"- {d[0]}" if d else '- none')
+due = []
+for key in ['email', 'calendar', 'mentions', 'weather', 'workspace', 'memory']:
+    ts = checks.get(key)
+    is_due = ts is None or (now - int(ts) >= thresholds[key])
+    print(f"- {key:9s} {'DUE' if is_due else 'ok '}  last={age(ts)}")
+    if is_due:
+        due.append(key)
+if due:
+    print('\nnext suggested check:')
+    print(f"- {due[0]}")
+else:
+    print('\nall checks are fresh')
 PY
 }
 
@@ -50,15 +77,16 @@ mark_check() {
     *) echo "Invalid check type: $check_name" >&2; usage; exit 2 ;;
   esac
 
-  python3 - "$STATE_FILE" "$1" "$NOW" <<'PY'
-import json,sys
-p,k,now=sys.argv[1],sys.argv[2],int(sys.argv[3])
-j=json.load(open(p,'r',encoding='utf-8'))
-j.setdefault('lastChecks',{})[k]=now
-with open(p,'w',encoding='utf-8') as f:
-    json.dump(j,f,indent=2)
+  python3 - "$STATE_FILE" "$check_name" "$NOW" <<'PY'
+import json, sys
+path, key, now = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+data.setdefault('lastChecks', {})[key] = now
+with open(path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
     f.write('\n')
-print(f"updated {k}={now}")
+print(f"updated {key}={now}")
 PY
 }
 

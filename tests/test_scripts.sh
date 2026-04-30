@@ -28,6 +28,7 @@ bash captain/scripts/setup-openclaw-captain.sh --help >/dev/null
 bash captain/scripts/captain-doctor.sh --help >/dev/null
 bash captain/scripts/setup-harness-env.sh --help >/dev/null
 bash captain/scripts/init-local-profile.sh >/dev/null || true
+
 heartbeat_state="$(mktemp "${TMPDIR:-/tmp}/captain-heartbeat.XXXXXX")"
 rm -f "$heartbeat_state"
 trap 'rm -f "$heartbeat_state"' EXIT
