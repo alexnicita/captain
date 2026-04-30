@@ -40,6 +40,11 @@
   - shared agent CLI adapter for OpenClaw and Hermes JSON-edit runs
   - cycle hooks (task output + commit/push)
   - optional user prompt plumbed through cycle context and logs
+- `commit_subject_quality.rs`
+  - reusable commit subject normalization, generic-subject rejection, and changed-scope matching
+- `duration.rs`
+  - shared duration parser for CLI and coding-mode tests
+
 - `events.rs`
   - event taxonomy constants
   - run IDs + sequence numbers

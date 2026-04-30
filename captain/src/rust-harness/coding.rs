@@ -6,7 +6,11 @@ use crate::coding_tasks::{
     ensure_roadmap_seed_tasks, record_task_outcome, record_task_selection,
     select_forced_code_change_task, select_next_feature_task_from_docs, TaskProgressMemory,
 };
+use crate::commit_subject_quality::{
+    deterministic_subject_from_files, has_informative_subject_scope, is_generic_subject,
+};
 use crate::config::ProviderConfig;
+pub use crate::duration::parse_duration_seconds;
 use crate::events::{kinds, now_unix, EventSink, HarnessEvent};
 use crate::provider::{build_provider, Provider};
 use crate::runtime_gate::RuntimeGate;
@@ -3383,98 +3387,14 @@ async fn unstage_internal_artifacts(
     .await
 }
 
-fn deterministic_subject_from_files(files: &[String]) -> String {
-    let mut names = filter_meaningful_scope_files(files);
-    names.sort();
-    names.dedup();
-
-    let top = names
-        .iter()
-        .take(2)
-        .map(|f| f.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let intent = if names.iter().any(|f| f.starts_with("src/")) {
-        "implement scoped code updates"
-    } else if names
-        .iter()
-        .any(|f| f.ends_with("README.md") || f.ends_with("RUNBOOK.md"))
-    {
-        "document operator workflow changes"
-    } else if names
-        .iter()
-        .any(|f| f.contains("test") || f.contains("fixtures/"))
-    {
-        "add regression coverage"
-    } else {
-        "update harness workflow"
-    };
-
-    if top.is_empty() {
-        format!("{intent} in tracked files")
-    } else {
-        format!("{intent} in {top}")
-    }
-}
-
 fn commit_subject_is_generic(subject: &str) -> bool {
-    let normalized = normalize_subject_text(subject);
-    if normalized.is_empty() {
-        return true;
-    }
-
-    let blocked_patterns = [
-        "generalizable",
-        "build a generalizable",
-        "harness coding cycle",
-        "coding cycle",
-        "advance harness workflow",
-        "update code",
-        "misc updates",
-        "minor fixes",
-    ];
-
-    blocked_patterns
-        .iter()
-        .any(|pattern| normalized.contains(pattern))
-}
-
-fn normalize_subject_text(subject: &str) -> String {
-    subject
-        .to_ascii_lowercase()
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    is_generic_subject(subject)
 }
 
 fn subject_mentions_changed_scope(subject: &str, files: &[String]) -> bool {
-    let normalized_subject = normalize_subject_text(subject);
-    if normalized_subject.is_empty() || files.is_empty() {
-        return false;
-    }
-
-    files
-        .iter()
-        .flat_map(|file| scope_tokens_from_file(file))
-        .any(|token| normalized_subject.contains(&token))
-}
-
-fn scope_tokens_from_file(file: &str) -> Vec<String> {
-    let normalized = file
-        .to_ascii_lowercase()
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
-        .collect::<String>();
-
-    normalized
-        .split_whitespace()
-        .filter(|token| token.len() >= 3)
-        .map(ToOwned::to_owned)
-        .collect::<Vec<_>>()
+    let meaningful = filter_meaningful_scope_files(files);
+    let changed_files = meaningful.iter().map(String::as_str).collect::<Vec<_>>();
+    has_informative_subject_scope(subject, &changed_files)
 }
 
 async fn dedupe_subject(repo_path: &Path, subject: &str) -> String {
@@ -3956,49 +3876,6 @@ fn save_progress_memory(path: &Path, progress: &TaskProgressMemory) -> Result<()
     }
     fs::write(path, serde_json::to_string_pretty(progress)?)?;
     Ok(())
-}
-
-pub fn parse_duration_seconds(input: &str) -> std::result::Result<u64, String> {
-    let input = input.trim();
-    if input.is_empty() {
-        return Err("duration cannot be empty".to_string());
-    }
-
-    if let Ok(seconds) = input.parse::<u64>() {
-        if seconds == 0 {
-            return Err("duration must be > 0".to_string());
-        }
-        return Ok(seconds);
-    }
-
-    let split_at = input
-        .char_indices()
-        .find(|(_, ch)| !ch.is_ascii_digit())
-        .map(|(idx, _)| idx)
-        .ok_or_else(|| format!("invalid duration: {input}"))?;
-
-    let (num_part, unit_part) = input.split_at(split_at);
-    if num_part.is_empty() {
-        return Err(format!("invalid duration: {input}"));
-    }
-
-    let quantity = num_part
-        .parse::<u64>()
-        .map_err(|_| format!("invalid duration number: {num_part}"))?;
-
-    if quantity == 0 {
-        return Err("duration must be > 0".to_string());
-    }
-
-    let unit = unit_part.trim().to_ascii_lowercase();
-    match unit.as_str() {
-        "s" => Ok(quantity),
-        "m" => Ok(quantity.saturating_mul(60)),
-        "h" => Ok(quantity.saturating_mul(3600)),
-        _ => Err(format!(
-            "invalid duration unit '{unit_part}' (use seconds or suffix s/m/h)"
-        )),
-    }
 }
 
 #[cfg(test)]

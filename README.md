@@ -42,13 +42,19 @@ captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration
 
 ## Why This Exists
 
-OpenClaw and similar agents make it easy to give a model real tools and persistent workspace access. Captain adds the governance layer around that power:
+OpenClaw, Hermes, Codex-style CLIs, and similar agents make it easy to give a model real tools and persistent workspace access. Captain adds the governance layer around that power:
 
 - **Policy**: commands and tools are explicit.
 - **Evidence**: every phase and gate emits structured events.
 - **Replay**: runs can be inspected after the fact.
 - **Commit discipline**: generic/no-op/internal-only commits are blocked.
 - **Operator control**: local private files and secrets stay out of git.
+
+## Product Naming
+
+- **Captain** is the product and repository: the governance/control plane for autonomous coding runs.
+- **`agent-harness`** is the current Rust package/binary retained as the stable harness implementation and compatibility surface.
+- **`captain/harnesses/rust-harness/scripts/harness.sh`** is the canonical operator entrypoint for launch docs and demos.
 
 ## Project Layout
 
@@ -137,7 +143,8 @@ Captain is designed for local operator control, but governed agents still run re
 - Keep confidential repos under `captain/private/`.
 - Use command allowlists for non-default tools.
 - Review `runs/events.jsonl` before sharing any run artifact publicly.
-- Read `SECURITY.md` before exposing OpenClaw channels or remote access.
+- Read `SECURITY.md` and `docs/captain/security-threat-model.md` before exposing OpenClaw/Hermes channels or remote access.
+- Treat Captain as governance, not a VM/container sandbox; use disposable isolation for untrusted prompts or repos.
 
 ## Optional Knowledge Base
 
