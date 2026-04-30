@@ -191,6 +191,15 @@ impl StageResult {
             commands: Vec::new(),
         }
     }
+
+    fn passed(stage: WorkStage) -> Self {
+        Self {
+            stage,
+            success: true,
+            error: None,
+            commands: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -496,7 +505,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let progress_path = resolve_output_file(&repo_path, args.progress_file.as_deref())?
         .unwrap_or_else(|| repo_path.join(".harness/coding-progress.json"));
     let lock_path = resolve_output_file(&repo_path, args.run_lock_file.as_deref())?
-        .unwrap_or_else(|| repo_path.join(".git/.agent-harness-code.lock"));
+        .unwrap_or_else(|| default_repo_run_lock_path(&repo_path));
     let noop_streak_limit = args.noop_streak_limit.max(1);
     let conformance_interval_unchanged = args.conformance_interval_unchanged.max(1);
 
@@ -750,14 +759,18 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             });
 
         let codegen_result = if architecture_result.success && plan_result.success {
-            run_codegen_stage(
-                &code_engine,
-                &ctx,
-                selected_task.as_ref(),
-                user_prompt.as_deref(),
-                agent_cli.as_ref(),
-            )
-            .await
+            if should_run_codegen_stage(agent_cli.as_ref()) {
+                run_codegen_stage(
+                    &code_engine,
+                    &ctx,
+                    selected_task.as_ref(),
+                    user_prompt.as_deref(),
+                    agent_cli.as_ref(),
+                )
+                .await
+            } else {
+                StageResult::passed(WorkStage::Act)
+            }
         } else {
             StageResult::skipped(WorkStage::Act, "architecture/plan stage failed")
         };
@@ -1299,6 +1312,10 @@ fn merge_stage_results(stage: WorkStage, first: StageResult, second: StageResult
         error,
         commands,
     }
+}
+
+fn should_run_codegen_stage(agent_cli: Option<&AgentCli>) -> bool {
+    agent_cli.is_some()
 }
 
 async fn run_codegen_stage(
@@ -2597,7 +2614,10 @@ async fn run_cycle_hooks(
     }
 
     if !passes_commit_diff_rubric(repo_path, &staged_meaningful, selected_task).await {
-        let detail = "commit rejected by diff rubric (scope/size/relevance)".to_string();
+        let detail = format!(
+            "commit rejected by diff rubric (scope/size/relevance); staged_meaningful={}",
+            staged_meaningful.join(", ")
+        );
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: false,
@@ -2758,7 +2778,7 @@ async fn run_cycle_hooks(
         detail: commit_message.clone(),
     });
 
-    if args.push_each_cycle || meaningful_cycle {
+    if args.push_each_cycle {
         let push_result = execute_command_line(WorkStage::Act, "git push", &hook_ctx, policy).await;
         let push_detail = if push_result.success {
             "git push ok".to_string()
@@ -3359,11 +3379,17 @@ async fn pending_file_names(repo_path: &Path) -> Vec<String> {
     }
 }
 
+fn path_starts_with_component(path: &str, component: &str) -> bool {
+    path == component
+        || path
+            .strip_prefix(component)
+            .is_some_and(|rest| rest.starts_with('/'))
+        || path.contains(&format!("/{component}/"))
+        || path.ends_with(&format!("/{component}"))
+}
+
 fn is_internal_artifact_path(path: &str) -> bool {
-    path.starts_with(".harness/")
-        || path.starts_with("runs/")
-        || path == ".harness"
-        || path == "runs"
+    path_starts_with_component(path, ".harness") || path_starts_with_component(path, "runs")
 }
 
 fn filter_meaningful_scope_files(files: &[String]) -> Vec<String> {
@@ -3428,17 +3454,15 @@ fn commit_has_meaningful_scope(files: &[String], selected_task: Option<&FeatureT
         return false;
     }
 
-    let only_internal_state = files
-        .iter()
-        .all(|f| f.starts_with(".harness/") || f.starts_with("runs/"));
+    let only_internal_state = files.iter().all(|f| is_internal_artifact_path(f));
     if only_internal_state {
         return false;
     }
 
-    let has_src = files.iter().any(|f| f.starts_with("src/"));
-    let has_tests = files
-        .iter()
-        .any(|f| f.starts_with("tests/") || f.contains("/tests/") || f.contains("_test"));
+    let has_src = files.iter().any(|f| path_starts_with_component(f, "src"));
+    let has_tests = files.iter().any(|f| {
+        path_starts_with_component(f, "tests") || f.contains("/tests/") || f.contains("_test")
+    });
     let has_docs = files.iter().any(|f| {
         f.ends_with("README.md")
             || f.ends_with("RUNBOOK.md")
@@ -3512,14 +3536,16 @@ async fn passes_commit_diff_rubric(
     }
 
     if let Some(task) = selected_task {
-        if task.source.starts_with("src/") {
+        if path_starts_with_component(&task.source, "src") {
             return staged_files
                 .iter()
-                .any(|f| f == &task.source || f.starts_with("src/"));
+                .any(|f| f == &task.source || path_starts_with_component(f, "src"));
         }
     }
 
-    staged_files.iter().any(|f| f.starts_with("src/"))
+    staged_files
+        .iter()
+        .any(|f| path_starts_with_component(f, "src"))
 }
 
 async fn infer_commit_kind(repo_path: &Path, user_prompt: Option<&str>) -> String {
@@ -3613,11 +3639,10 @@ async fn repo_dirty(repo_path: &Path) -> Result<bool> {
     let output = Command::new("git")
         .arg("status")
         .arg("--porcelain")
-        .arg("--untracked-files=no")
         .current_dir(repo_path)
         .output()
         .await
-        .context("git status --porcelain --untracked-files=no failed")?;
+        .context("git status --porcelain failed")?;
 
     if !output.status.success() {
         return Err(anyhow!(
@@ -3844,6 +3869,30 @@ fn resolve_output_file(repo_path: &Path, output_file: Option<&str>) -> Result<Op
     Ok(Some(resolved))
 }
 
+fn default_repo_run_lock_path(repo_path: &Path) -> PathBuf {
+    let dot_git = repo_path.join(".git");
+    if dot_git.is_dir() {
+        return dot_git.join(".agent-harness-code.lock");
+    }
+
+    if dot_git.is_file() {
+        if let Ok(content) = fs::read_to_string(&dot_git) {
+            if let Some(gitdir) = content.trim().strip_prefix("gitdir:") {
+                let gitdir = gitdir.trim();
+                let gitdir_path = PathBuf::from(gitdir);
+                let resolved = if gitdir_path.is_absolute() {
+                    gitdir_path
+                } else {
+                    repo_path.join(gitdir_path)
+                };
+                return resolved.join(".agent-harness-code.lock");
+            }
+        }
+    }
+
+    repo_path.join(".git/.agent-harness-code.lock")
+}
+
 fn acquire_repo_run_lock(path: &Path) -> Result<RepoRunLock> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -4028,6 +4077,19 @@ mod tests {
     }
 
     #[test]
+    fn shell_executor_does_not_require_provider_codegen() {
+        assert!(!should_run_codegen_stage(None));
+        let hermes = AgentCli::hermes();
+        assert!(should_run_codegen_stage(Some(&hermes)));
+    }
+
+    #[test]
+    fn commit_scope_accepts_monorepo_prefixed_src_paths() {
+        let files = vec!["captain/harnesses/rust-harness/src/dogfood_smoke.rs".to_string()];
+        assert!(commit_has_meaningful_scope(&files, None));
+    }
+
+    #[test]
     fn filter_meaningful_scope_files_excludes_internal_artifacts() {
         let files = vec![
             ".harness/coding-progress.json".to_string(),
@@ -4053,6 +4115,39 @@ mod tests {
 
         let second = select_next_feature_task_from_docs(dir.path(), &progress, 2, false).unwrap();
         assert_ne!(first.id, second.id);
+    }
+
+    #[tokio::test]
+    async fn repo_dirty_detects_untracked_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let status = Command::new("git")
+            .args(["init"])
+            .current_dir(dir.path())
+            .output()
+            .await
+            .unwrap();
+        assert!(status.status.success());
+        fs::write(
+            dir.path().join("new_file.rs"),
+            "pub const NEW_FILE: bool = true;\n",
+        )
+        .unwrap();
+
+        assert!(repo_dirty(dir.path()).await.unwrap());
+    }
+
+    #[test]
+    fn default_lock_path_resolves_git_file_worktree_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let gitdir = dir.path().join("real-git-dir");
+        fs::create_dir_all(&gitdir).unwrap();
+        fs::write(dir.path().join(".git"), "gitdir: real-git-dir\n").unwrap();
+
+        assert_eq!(
+            default_repo_run_lock_path(dir.path()),
+            gitdir.join(".agent-harness-code.lock")
+        );
+        let _lock = acquire_repo_run_lock(&default_repo_run_lock_path(dir.path())).unwrap();
     }
 
     #[test]

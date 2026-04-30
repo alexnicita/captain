@@ -14,6 +14,7 @@ scripts=(
   "captain/scripts/overnight-rust-harness.sh"
   "captain/harnesses/hourly-harness/run.sh"
   "captain/harnesses/rust-harness/start.sh"
+  "captain/harnesses/rust-harness/scripts/dogfood.sh"
   "docs/examples/safe-pr-review.sh"
   "docs/examples/one-hour-coding-sprint.sh"
   "docs/examples/risky-change-caught.sh"
@@ -59,6 +60,27 @@ grep -q 'preserve=.*hermes' <<<"$cleanup_output" || {
 }
 grep -q 'CAPTAIN_CLEANUP_AUTO' captain/harnesses/rust-harness/scripts/harness.sh || {
   echo "harness must expose automatic cleanup integration" >&2
+  exit 1
+}
+
+grep -q 'worktree add --detach' captain/harnesses/rust-harness/scripts/dogfood.sh || {
+  echo "dogfood script must isolate coding-mode in a detached git worktree" >&2
+  exit 1
+}
+grep -q 'DOGFOOD_CODE_REPO' captain/harnesses/rust-harness/scripts/dogfood.sh || {
+  echo "dogfood script must point coding-mode at an isolated repo path" >&2
+  exit 1
+}
+grep -q 'src/dogfood_smoke.rs' captain/harnesses/rust-harness/scripts/dogfood.sh || {
+  echo "dogfood script must create a deterministic meaningful src diff" >&2
+  exit 1
+}
+grep -q 'cycles_failed' captain/harnesses/rust-harness/scripts/dogfood.sh || {
+  echo "dogfood script must fail loudly when coding cycles fail" >&2
+  exit 1
+}
+grep -q 'cargo build --bin agent-harness' captain/harnesses/rust-harness/scripts/dogfood.sh || {
+  echo "dogfood script must build the harness once and reuse the binary" >&2
   exit 1
 }
 

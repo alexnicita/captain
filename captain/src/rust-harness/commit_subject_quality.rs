@@ -64,9 +64,17 @@ pub fn is_generic_subject(subject: &str) -> bool {
             .any(|pattern| normalized.contains(pattern))
 }
 
+fn path_has_src_component(path: &str) -> bool {
+    path == "src" || path.starts_with("src/") || path.contains("/src/")
+}
+
 pub fn deterministic_subject_from_files(files: &[String]) -> String {
     let mut names = files.to_vec();
-    names.sort();
+    names.sort_by(|a, b| {
+        let a_src = path_has_src_component(a);
+        let b_src = path_has_src_component(b);
+        b_src.cmp(&a_src).then_with(|| a.cmp(b))
+    });
     names.dedup();
 
     let top = names
@@ -76,7 +84,7 @@ pub fn deterministic_subject_from_files(files: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
 
-    let intent = if names.iter().any(|f| f.starts_with("src/")) {
+    let intent = if names.iter().any(|f| path_has_src_component(f)) {
         "implement scoped code updates"
     } else if names
         .iter()
