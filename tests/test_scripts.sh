@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 scripts=(
+  "captain/bin/captain"
   "captain/scripts/heartbeat_checkin.sh"
   "captain/scripts/setup-openclaw-captain.sh"
   "captain/scripts/captain-doctor.sh"
@@ -30,6 +31,35 @@ bash captain/scripts/captain-doctor.sh --help >/dev/null
 bash captain/scripts/setup-harness-env.sh --help >/dev/null
 bash captain/scripts/storage_guard.sh --help >/dev/null
 bash captain/scripts/init-local-profile.sh >/dev/null || true
+bash captain/bin/captain --help | grep -q "captain hermes <prompt>" || {
+  echo "captain CLI help must document the Hermes shortcut" >&2
+  exit 1
+}
+cli_dry_run="$(bash captain/bin/captain hermes "ship useful code" --repo /tmp/example-repo --time 45m --runtime-log-file /tmp/captain.log --commit-each-cycle --dry-run)"
+grep -q 'harness.sh' <<<"$cli_dry_run" || {
+  echo "captain CLI must route agent shortcuts through the canonical harness entrypoint" >&2
+  exit 1
+}
+grep -q -- '--executor hermes' <<<"$cli_dry_run" || {
+  echo "captain hermes must select the hermes executor" >&2
+  exit 1
+}
+grep -q -- '--prompt ship useful code' <<<"$cli_dry_run" || {
+  echo "captain hermes must forward the positional prompt" >&2
+  exit 1
+}
+grep -q -- '--repo /tmp/example-repo' <<<"$cli_dry_run" || {
+  echo "captain CLI must forward --repo" >&2
+  exit 1
+}
+grep -q -- '--time 45m' <<<"$cli_dry_run" || {
+  echo "captain CLI must forward --time" >&2
+  exit 1
+}
+grep -q -- '--commit-each-cycle' <<<"$cli_dry_run" || {
+  echo "captain CLI must forward commit settings" >&2
+  exit 1
+}
 
 heartbeat_state="$(mktemp "${TMPDIR:-/tmp}/captain-heartbeat.XXXXXX")"
 rm -f "$heartbeat_state"
