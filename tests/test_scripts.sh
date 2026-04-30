@@ -27,6 +27,7 @@ done
 bash captain/scripts/setup-openclaw-captain.sh --help >/dev/null
 bash captain/scripts/captain-doctor.sh --help >/dev/null
 bash captain/scripts/setup-harness-env.sh --help >/dev/null
+bash captain/scripts/storage_guard.sh --help >/dev/null
 bash captain/scripts/init-local-profile.sh >/dev/null || true
 
 heartbeat_state="$(mktemp "${TMPDIR:-/tmp}/captain-heartbeat.XXXXXX")"
@@ -34,5 +35,31 @@ rm -f "$heartbeat_state"
 trap 'rm -f "$heartbeat_state"' EXIT
 HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.sh --status >/dev/null
 HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.sh --check workspace >/dev/null
+
+cleanup_root="$(mktemp -d "${TMPDIR:-/tmp}/captain-storage-guard.XXXXXX")"
+trap 'rm -f "$heartbeat_state"; rm -rf "$cleanup_root"' EXIT
+mkdir -p "$cleanup_root/workspace/tmp/old" "$cleanup_root/workspace/tmp_research/old" "$cleanup_root/openclaw" "$cleanup_root/hermes"
+touch "$cleanup_root/workspace/tmp/old/file" "$cleanup_root/workspace/tmp_research/old/file" "$cleanup_root/openclaw/keep" "$cleanup_root/hermes/keep"
+cleanup_output="$(OPENCLAW_HOME="$cleanup_root/openclaw" HERMES_HOME="$cleanup_root/hermes" OPENCLAW_WORKSPACE="$cleanup_root/workspace" CAPTAIN_CLEANUP_DRY_RUN=1 bash captain/scripts/storage_guard.sh --auto --min-free-gb 9999)"
+grep -q 'dry_run=1' <<<"$cleanup_output" || {
+  echo "storage guard must support dry-run cleanup planning" >&2
+  exit 1
+}
+grep -q 'preserve=.*openclaw' <<<"$cleanup_output" || {
+  echo "storage guard must explicitly preserve OpenClaw paths" >&2
+  exit 1
+}
+grep -q 'preserve=.*hermes' <<<"$cleanup_output" || {
+  echo "storage guard must explicitly preserve Hermes paths" >&2
+  exit 1
+}
+[[ -f "$cleanup_root/openclaw/keep" && -f "$cleanup_root/hermes/keep" ]] || {
+  echo "storage guard must not remove OpenClaw or Hermes installations" >&2
+  exit 1
+}
+grep -q 'CAPTAIN_CLEANUP_AUTO' captain/harnesses/rust-harness/scripts/harness.sh || {
+  echo "harness must expose automatic cleanup integration" >&2
+  exit 1
+}
 
 echo "test_scripts: ok"

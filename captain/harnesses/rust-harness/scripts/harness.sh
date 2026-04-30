@@ -47,6 +47,10 @@ Optional:
   --commit-each-cycle   Attempt commit hook each cycle
   --push-each-cycle     Attempt push after commit
 
+Environment:
+  CAPTAIN_CLEANUP_AUTO=1          Run guarded storage cleanup before harness start
+  CAPTAIN_CLEANUP_MIN_FREE_GB=N   Free-space threshold for automatic cleanup
+
 Examples:
   captain/harnesses/rust-harness/scripts/harness.sh --repo /path/to/repo --time 1h
   captain/harnesses/rust-harness/scripts/harness.sh --repo . --time 45m --prompt "improve test coverage"
@@ -210,6 +214,12 @@ if [[ "$COMMIT_EACH_CYCLE" -eq 1 ]]; then
 fi
 if [[ "$PUSH_EACH_CYCLE" -eq 1 ]]; then
   CMD+=(--push-each-cycle)
+fi
+
+if [[ "${CAPTAIN_CLEANUP_AUTO:-0}" == "1" ]]; then
+  echo "[harness] storage cleanup auto-check enabled"
+  bash "$ROOT_DIR/../../scripts/storage_guard.sh" --auto --min-free-gb "${CAPTAIN_CLEANUP_MIN_FREE_GB:-8}" || \
+    echo "[harness] warning: storage cleanup auto-check failed; continuing" >&2
 fi
 
 echo "[harness] repo=$REPO_DIR"
