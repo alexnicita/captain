@@ -18,6 +18,17 @@ pub fn normalize_scope_token(input: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+pub fn normalize_subject_text(subject: &str) -> String {
+    subject
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn normalize_file_stem_scope(path: &str) -> String {
     let stem = path
         .rsplit('/')
@@ -28,13 +39,82 @@ fn normalize_file_stem_scope(path: &str) -> String {
 }
 
 pub fn is_generic_subject(subject: &str) -> bool {
-    let s = subject.trim().to_ascii_lowercase().replace('—', "-");
-    s.contains("build a generalizable") && s.contains("harness: coding cycle")
+    let normalized = normalize_subject_text(subject);
+    if normalized.is_empty() {
+        return true;
+    }
+
+    let blocked_patterns = [
+        "generalizable",
+        "build a generalizable",
+        "harness coding cycle",
+        "coding cycle",
+        "advance harness workflow",
+        "update code",
+        "update files",
+        "misc updates",
+        "minor fixes",
+        "work in progress",
+        "changes",
+    ];
+
+    normalized == "wip"
+        || blocked_patterns
+            .iter()
+            .any(|pattern| normalized.contains(pattern))
+}
+
+pub fn deterministic_subject_from_files(files: &[String]) -> String {
+    let mut names = files.to_vec();
+    names.sort();
+    names.dedup();
+
+    let top = names
+        .iter()
+        .take(2)
+        .map(|f| f.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let intent = if names.iter().any(|f| f.starts_with("src/")) {
+        "implement scoped code updates"
+    } else if names
+        .iter()
+        .any(|f| f.ends_with("README.md") || f.ends_with("RUNBOOK.md"))
+    {
+        "document operator workflow changes"
+    } else if names
+        .iter()
+        .any(|f| f.contains("test") || f.contains("fixtures/"))
+    {
+        "add regression coverage"
+    } else {
+        "update harness workflow"
+    };
+
+    if top.is_empty() {
+        format!("{intent} in tracked files")
+    } else {
+        format!("{intent} in {top}")
+    }
 }
 
 pub fn has_informative_subject_scope(subject: &str, changed_files: &[&str]) -> bool {
     if is_generic_subject(subject) {
         return false;
+    }
+
+    let normalized_subject = normalize_subject_text(subject);
+    if normalized_subject.is_empty() || changed_files.is_empty() {
+        return false;
+    }
+
+    if changed_files
+        .iter()
+        .flat_map(|file| scope_tokens_from_file(file))
+        .any(|token| normalized_subject.contains(&token))
+    {
+        return true;
     }
 
     let Some(open_idx) = subject.find('(') else {
@@ -62,4 +142,18 @@ pub fn has_informative_subject_scope(subject: &str, changed_files: &[&str]) -> b
             || scope == "src"
             || scope == "code"
     })
+}
+
+fn scope_tokens_from_file(file: &str) -> Vec<String> {
+    let normalized = file
+        .to_ascii_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>();
+
+    normalized
+        .split_whitespace()
+        .filter(|token| token.len() >= 3)
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>()
 }

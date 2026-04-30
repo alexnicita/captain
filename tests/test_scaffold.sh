@@ -18,6 +18,7 @@ required_paths=(
   "captain/harnesses/rust-harness/README.md"
   "docs/captain/README.md"
   "docs/captain/architecture/directory-map.md"
+  "docs/captain/security-threat-model.md"
   "docs/demo/90-second-demo.md"
   "docs/examples/safe-pr-review.sh"
   "captain/knowledge/README.md"
@@ -32,7 +33,10 @@ done
 
 expected_top_dirs="$(printf "captain\ndocs\ntests")"
 actual_top_dirs="$(
-  find . -maxdepth 1 -type d ! -name . ! -name .git -exec basename {} \; | sort
+  find . -maxdepth 1 -type d ! -name . ! -name .git -exec basename {} \; | sort |
+    while IFS= read -r dir; do
+      git check-ignore -q "$dir/" || printf '%s\n' "$dir"
+    done
 )"
 if [[ "$actual_top_dirs" != "$expected_top_dirs" ]]; then
   echo "unexpected top-level directories:" >&2

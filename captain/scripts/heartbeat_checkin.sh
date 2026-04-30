@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-STATE_FILE="$ROOT/memory/heartbeat-state.json"
+STATE_FILE="${HEARTBEAT_STATE_FILE:-$ROOT/memory/heartbeat-state.json}"
 NOW="$(date -u +%s)"
 
 usage() {
@@ -16,7 +16,7 @@ EOF
 ensure_state() {
   mkdir -p "$(dirname "$STATE_FILE")"
   if [[ ! -f "$STATE_FILE" ]]; then
-    cat > "$STATE_FILE" <<'JSON'
+    cat >"$STATE_FILE" <<'JSON'
 {
   "lastChecks": {
     "email": null,
@@ -31,7 +31,7 @@ JSON
   fi
 }
 
-status() {
+print_status() {
   python3 - "$STATE_FILE" "$NOW" <<'PY'
 import json, sys
 state_path = sys.argv[1]
@@ -55,13 +55,13 @@ def age(ts):
     return f"{v//3600}h{(v%3600)//60:02d}m ago"
 
 print('heartbeat state:')
-due=[]
-for k in ['email','calendar','mentions','weather','workspace','memory']:
-    ts=checks.get(k)
-    is_due = ts is None or (now-int(ts) >= thresholds[k])
-    print(f"- {k:9s} {'DUE' if is_due else 'ok '}  last={age(ts)}")
+due = []
+for key in ['email', 'calendar', 'mentions', 'weather', 'workspace', 'memory']:
+    ts = checks.get(key)
+    is_due = ts is None or (now - int(ts) >= thresholds[key])
+    print(f"- {key:9s} {'DUE' if is_due else 'ok '}  last={age(ts)}")
     if is_due:
-        due.append(k)
+        due.append(key)
 if due:
     print('\nnext suggested check:')
     print(f"- {due[0]}")
@@ -70,19 +70,20 @@ else:
 PY
 }
 
-mark() {
-  local k="$1"
-  case "$k" in
+mark_check() {
+  local check_name="$1"
+  case "$check_name" in
     email|calendar|mentions|weather|workspace|memory) ;;
-    *) echo "Invalid check type: $k" >&2; usage; exit 2 ;;
+    *) echo "Invalid check type: $check_name" >&2; usage; exit 2 ;;
   esac
-  python3 - "$STATE_FILE" "$k" "$NOW" <<'PY'
+
+  python3 - "$STATE_FILE" "$check_name" "$NOW" <<'PY'
 import json, sys
 path, key, now = sys.argv[1], sys.argv[2], int(sys.argv[3])
-with open(path,'r',encoding='utf-8') as f:
-    data=json.load(f)
+with open(path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
 data.setdefault('lastChecks', {})[key] = now
-with open(path,'w',encoding='utf-8') as f:
+with open(path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
     f.write('\n')
 print(f"updated {key}={now}")
@@ -92,10 +93,20 @@ PY
 main() {
   ensure_state
   case "${1:-}" in
-    --status) status ;;
-    --check) [[ $# -eq 2 ]] || { usage; exit 1; }; mark "$2" ;;
-    -h|--help) usage ;;
-    *) usage; exit 1 ;;
+    --status)
+      print_status
+      ;;
+    --check)
+      [[ $# -eq 2 ]] || { usage; exit 1; }
+      mark_check "$2"
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
   esac
 }
 

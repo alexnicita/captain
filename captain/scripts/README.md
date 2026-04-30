@@ -8,5 +8,5 @@ Key scripts:
 - `setup-harness-env.sh`
 - `init-local-profile.sh`
 - `storage_guard.sh`
-- `heartbeat_checkin.sh`
+- `heartbeat_checkin.sh` (tracks heartbeat check freshness in `memory/heartbeat-state.json`, or `HEARTBEAT_STATE_FILE` for tests/isolated runs)
 - `overnight-rust-harness.sh` (pull latest + run 3h harness safely)

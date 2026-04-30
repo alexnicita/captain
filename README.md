@@ -11,7 +11,7 @@ The operating idea is simple: agents can work longer when the run has a flight r
 - Runs timeboxed coding sessions against a target repo.
 - Emits stable JSONL events for replay, eval, and regression checks.
 - Enforces command allowlists, runtime limits, no-op detection, and commit-quality gates.
-- Integrates with OpenClaw as an executor while preserving a stable local CLI runner.
+- Integrates with OpenClaw or Hermes as agent CLI executors while preserving a stable local CLI runner.
 - Keeps personal/operator files private by default.
 
 ## Five-Minute Start
@@ -37,17 +37,24 @@ The canonical interface is intentionally stable:
 
 ```bash
 captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor openclaw
+captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor hermes
 ```
 
 ## Why This Exists
 
-OpenClaw and similar agents make it easy to give a model real tools and persistent workspace access. Captain adds the governance layer around that power:
+OpenClaw, Hermes, Codex-style CLIs, and similar agents make it easy to give a model real tools and persistent workspace access. Captain adds the governance layer around that power:
 
 - **Policy**: commands and tools are explicit.
 - **Evidence**: every phase and gate emits structured events.
 - **Replay**: runs can be inspected after the fact.
 - **Commit discipline**: generic/no-op/internal-only commits are blocked.
 - **Operator control**: local private files and secrets stay out of git.
+
+## Product Naming
+
+- **Captain** is the product and repository: the governance/control plane for autonomous coding runs.
+- **`agent-harness`** is the current Rust package/binary retained as the stable harness implementation and compatibility surface.
+- **`captain/harnesses/rust-harness/scripts/harness.sh`** is the canonical operator entrypoint for launch docs and demos.
 
 ## Project Layout
 
@@ -70,8 +77,8 @@ OpenClaw and similar agents make it easy to give a model real tools and persiste
 
 - Node.js 24 recommended, Node.js 22.14+ minimum.
 - Rust 1.76+ for `captain/harnesses/rust-harness`.
-- OpenClaw CLI for `--executor openclaw`.
-- A model credential via `OPENAI_API_KEY` or OpenClaw auth profiles.
+- OpenClaw CLI for `--executor openclaw`, or Hermes CLI for `--executor hermes`.
+- A model credential via `OPENAI_API_KEY` / OpenClaw auth profiles, or Hermes auth/config for Hermes runs.
 
 ## Verification
 
@@ -136,7 +143,8 @@ Captain is designed for local operator control, but governed agents still run re
 - Keep confidential repos under `captain/private/`.
 - Use command allowlists for non-default tools.
 - Review `runs/events.jsonl` before sharing any run artifact publicly.
-- Read `SECURITY.md` before exposing OpenClaw channels or remote access.
+- Read `SECURITY.md` and `docs/captain/security-threat-model.md` before exposing OpenClaw/Hermes channels or remote access.
+- Treat Captain as governance, not a VM/container sandbox; use disposable isolation for untrusted prompts or repos.
 
 ## Optional Knowledge Base
 
