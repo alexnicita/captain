@@ -5,6 +5,8 @@ CAPTAIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$CAPTAIN_ROOT/.." && pwd)"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 OPENCLAW_WORKSPACE="${OPENCLAW_WORKSPACE:-$REPO_ROOT}"
 HARNESS_DIR="$CAPTAIN_ROOT/harnesses/rust-harness"
 ROOT_FS="${CAPTAIN_CLEANUP_ROOT_FS:-/}"
@@ -25,9 +27,9 @@ Modes:
   --prune        Run safe cleanup regardless of current free space.
 
 Safety defaults:
-  - Preserves OpenClaw and Hermes installs/configs: OPENCLAW_HOME and HERMES_HOME.
+  - Preserves agent installs/configs: OPENCLAW_HOME, HERMES_HOME, CLAUDE_HOME, and CODEX_HOME.
   - Cleans disposable Captain workspace/tmp and old harness run artifacts first.
-  - Does not remove npm globals, OpenClaw, Hermes, credentials, or Cargo registries.
+  - Does not remove npm globals, agent configs, credentials, or Cargo registries.
   - OS-level package/journal cleanup only uses sudo when CAPTAIN_CLEANUP_ALLOW_SUDO=1.
   - Docker cleanup is off unless CAPTAIN_CLEANUP_DOCKER=1.
   - Set CAPTAIN_CLEANUP_DRY_RUN=1 or pass --dry-run to print planned actions.
@@ -39,6 +41,8 @@ Environment:
   CAPTAIN_CLEANUP_DOCKER        1 to prune Docker build cache only
   OPENCLAW_HOME                 OpenClaw install/config path to preserve
   HERMES_HOME                   Hermes install/config path to preserve
+  CLAUDE_HOME                   Claude Code config path to preserve
+  CODEX_HOME                    Codex config path to preserve
   OPENCLAW_WORKSPACE            Captain/OpenClaw workspace path
 EOF
 }
@@ -73,7 +77,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 bytes_avail() {
-  df -B1 --output=avail "$ROOT_FS" | tail -n1 | tr -d ' '
+  python3 - "$ROOT_FS" <<'PY'
+import os
+import sys
+
+stat = os.statvfs(sys.argv[1])
+print(stat.f_bavail * stat.f_frsize)
+PY
 }
 
 gb_avail() {
@@ -93,6 +103,8 @@ PY
 
 OPENCLAW_REAL="$(canonical_path "$OPENCLAW_HOME")"
 HERMES_REAL="$(canonical_path "$HERMES_HOME")"
+CLAUDE_REAL="$(canonical_path "$CLAUDE_HOME")"
+CODEX_REAL="$(canonical_path "$CODEX_HOME")"
 WORKSPACE_REAL="$(canonical_path "$OPENCLAW_WORKSPACE")"
 HARNESS_REAL="$(canonical_path "$HARNESS_DIR")"
 
@@ -101,7 +113,7 @@ is_preserved_path() {
   target="${1:-}"
   [[ -n "$target" ]] || return 0
   real="$(canonical_path "$target")"
-  [[ "$real" == "$OPENCLAW_REAL" || "$real" == "$OPENCLAW_REAL"/* || "$real" == "$HERMES_REAL" || "$real" == "$HERMES_REAL"/* ]]
+  [[ "$real" == "$OPENCLAW_REAL" || "$real" == "$OPENCLAW_REAL"/* || "$real" == "$HERMES_REAL" || "$real" == "$HERMES_REAL"/* || "$real" == "$CLAUDE_REAL" || "$real" == "$CLAUDE_REAL"/* || "$real" == "$CODEX_REAL" || "$real" == "$CODEX_REAL"/* ]]
 }
 
 safe_rm_rf() {
@@ -150,7 +162,7 @@ sudo_cmd() {
 
 report() {
   log "mode=$MODE dry_run=$DRY_RUN min_free_gb=$MIN_FREE_GB free_gb=$(gb_avail) root_fs=$ROOT_FS"
-  log "preserve=openclaw:$OPENCLAW_REAL hermes:$HERMES_REAL"
+  log "preserve=openclaw:$OPENCLAW_REAL hermes:$HERMES_REAL claude:$CLAUDE_REAL codex:$CODEX_REAL"
   log "workspace=$WORKSPACE_REAL harness=$HARNESS_REAL"
   du -sh "$WORKSPACE_REAL/tmp_research" 2>/dev/null | sed 's/^/[storage-guard] /' || true
   du -sh "$WORKSPACE_REAL/tmp" 2>/dev/null | sed 's/^/[storage-guard] /' || true

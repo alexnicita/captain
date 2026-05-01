@@ -39,11 +39,13 @@ def test_readme_frontloads_captain_cli_for_agent_machines():
     front_matter = readme[:3500]
 
     required_phrases = [
-        "Use Captain on an OpenClaw or Hermes machine",
+        "Use Captain on an Agent Machine",
         "EC2 instance or MacBook",
         "curl -fsSL https://raw.githubusercontent.com/alexnicita/captain/main/install.sh | bash",
         "captain hermes \"fix the failing tests\"",
         "captain openclaw \"implement the next scoped improvement\"",
+        "captain claude \"tighten the parser tests\"",
+        "captain codex \"refactor the flaky fixture loader\"",
         "--dry-run",
         "--push-each-cycle",
         "Pushes are opt-in",

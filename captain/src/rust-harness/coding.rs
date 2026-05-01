@@ -46,6 +46,8 @@ pub enum ExecutorPreset {
     Cargo,
     OpenClaw,
     Hermes,
+    Claude,
+    Codex,
 }
 
 #[derive(Debug, Clone)]
@@ -237,11 +239,18 @@ struct AgentExecutionPlan {
 enum AgentCliKind {
     OpenClaw,
     Hermes,
+    Claude,
+    Codex,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AgentCli {
     kind: AgentCliKind,
+}
+
+struct AgentCommand {
+    command: Command,
+    payload_file: Option<PathBuf>,
 }
 
 impl AgentCli {
@@ -257,10 +266,24 @@ impl AgentCli {
         }
     }
 
+    fn claude() -> Self {
+        Self {
+            kind: AgentCliKind::Claude,
+        }
+    }
+
+    fn codex() -> Self {
+        Self {
+            kind: AgentCliKind::Codex,
+        }
+    }
+
     fn for_preset(preset: ExecutorPreset) -> Option<Self> {
         match preset {
             ExecutorPreset::OpenClaw => Some(Self::openclaw()),
             ExecutorPreset::Hermes => Some(Self::hermes()),
+            ExecutorPreset::Claude => Some(Self::claude()),
+            ExecutorPreset::Codex => Some(Self::codex()),
             ExecutorPreset::Shell | ExecutorPreset::Cargo => None,
         }
     }
@@ -269,6 +292,8 @@ impl AgentCli {
         match self.kind {
             AgentCliKind::OpenClaw => "openclaw",
             AgentCliKind::Hermes => "hermes",
+            AgentCliKind::Claude => "claude",
+            AgentCliKind::Codex => "codex",
         }
     }
 
@@ -280,6 +305,8 @@ impl AgentCli {
         match self.kind {
             AgentCliKind::OpenClaw => vec!["openclaw".to_string(), "agent".to_string()],
             AgentCliKind::Hermes => vec!["hermes".to_string(), "chat".to_string()],
+            AgentCliKind::Claude => vec!["claude".to_string(), "--print".to_string()],
+            AgentCliKind::Codex => vec!["codex".to_string(), "exec".to_string()],
         }
     }
 
@@ -287,6 +314,8 @@ impl AgentCli {
         match self.kind {
             AgentCliKind::OpenClaw => format!("openclaw agent {label}"),
             AgentCliKind::Hermes => format!("hermes chat {label}"),
+            AgentCliKind::Claude => format!("claude --print {label}"),
+            AgentCliKind::Codex => format!("codex exec {label}"),
         }
     }
 
@@ -320,7 +349,10 @@ impl AgentCli {
         session_id: &str,
         timeout_sec: u64,
     ) -> Result<(String, String)> {
-        let mut command = self.command(prompt, session_id, timeout_sec);
+        let AgentCommand {
+            mut command,
+            payload_file,
+        } = self.command(repo_path, prompt, session_id, timeout_sec)?;
 
         let output = tokio::time::timeout(
             Duration::from_secs(timeout_sec),
@@ -341,14 +373,22 @@ impl AgentCli {
             ));
         }
 
-        let payload = self
-            .extract_payload_text(&stdout_text)
+        let payload = payload_file
+            .as_deref()
+            .and_then(read_agent_payload_file)
+            .or_else(|| self.extract_payload_text(&stdout_text))
             .unwrap_or(stdout_text);
         Ok((payload, stderr_text))
     }
 
-    fn command(self, prompt: &str, session_id: &str, timeout_sec: u64) -> Command {
-        match self.kind {
+    fn command(
+        self,
+        repo_path: &Path,
+        prompt: &str,
+        session_id: &str,
+        timeout_sec: u64,
+    ) -> Result<AgentCommand> {
+        let command = match self.kind {
             AgentCliKind::OpenClaw => {
                 let mut command = Command::new("openclaw");
                 command
@@ -365,7 +405,10 @@ impl AgentCli {
                     .arg("--json")
                     .arg("--message")
                     .arg(prompt);
-                command
+                AgentCommand {
+                    command,
+                    payload_file: None,
+                }
             }
             AgentCliKind::Hermes => {
                 let toolsets = std::env::var("CAPTAIN_HERMES_TOOLSETS")
@@ -388,15 +431,76 @@ impl AgentCli {
                     .arg("--yolo")
                     .arg("-q")
                     .arg(prompt);
-                command
+                AgentCommand {
+                    command,
+                    payload_file: None,
+                }
             }
-        }
+            AgentCliKind::Claude => {
+                let permission_mode = env_trimmed_or("CAPTAIN_CLAUDE_PERMISSION_MODE", "dontAsk");
+                let tools = std::env::var("CAPTAIN_CLAUDE_TOOLS")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .unwrap_or_else(|| "Read,Grep,Glob,LS".to_string());
+
+                let mut command = Command::new("claude");
+                command
+                    .arg("--print")
+                    .arg("--output-format")
+                    .arg("text")
+                    .arg("--no-session-persistence")
+                    .arg("--permission-mode")
+                    .arg(permission_mode);
+                if !tools.is_empty() {
+                    command.arg("--tools").arg(tools);
+                }
+                if let Some(model) = env_trimmed("CAPTAIN_CLAUDE_MODEL") {
+                    command.arg("--model").arg(model);
+                }
+                command.arg(prompt);
+                AgentCommand {
+                    command,
+                    payload_file: None,
+                }
+            }
+            AgentCliKind::Codex => {
+                let payload_file = agent_payload_file(repo_path, self.name(), session_id)?;
+                let sandbox = env_trimmed_or("CAPTAIN_CODEX_SANDBOX", "read-only");
+                let approval_policy = env_trimmed_or("CAPTAIN_CODEX_APPROVAL_POLICY", "never");
+
+                let mut command = Command::new("codex");
+                if let Some(model) = env_trimmed("CAPTAIN_CODEX_MODEL") {
+                    command.arg("--model").arg(model);
+                }
+                if let Some(profile) = env_trimmed("CAPTAIN_CODEX_PROFILE") {
+                    command.arg("--profile").arg(profile);
+                }
+                command
+                    .arg("-a")
+                    .arg(approval_policy)
+                    .arg("exec")
+                    .arg("--cd")
+                    .arg(repo_path)
+                    .arg("--sandbox")
+                    .arg(sandbox)
+                    .arg("--color")
+                    .arg("never")
+                    .arg("--output-last-message")
+                    .arg(&payload_file)
+                    .arg(prompt);
+                AgentCommand {
+                    command,
+                    payload_file: Some(payload_file),
+                }
+            }
+        };
+        Ok(command)
     }
 
     fn extract_payload_text(self, stdout: &str) -> Option<String> {
         match self.kind {
             AgentCliKind::OpenClaw => extract_openclaw_payload_text(stdout),
-            AgentCliKind::Hermes => {
+            AgentCliKind::Hermes | AgentCliKind::Claude | AgentCliKind::Codex => {
                 let trimmed = stdout.trim();
                 if trimmed.is_empty() {
                     None
@@ -1264,7 +1368,10 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
             },
             "shell",
         ),
-        ExecutorPreset::OpenClaw | ExecutorPreset::Hermes => {
+        ExecutorPreset::OpenClaw
+        | ExecutorPreset::Hermes
+        | ExecutorPreset::Claude
+        | ExecutorPreset::Codex => {
             let agent_cli = AgentCli::for_preset(args.preset)
                 .expect("agent executor preset must resolve to agent cli");
             policy
@@ -1819,7 +1926,7 @@ fn build_agent_cli_plan_prompt(
     let user_prompt = user_prompt.unwrap_or("");
     let research = load_latest_research_context(&ctx.repo_path);
     format!(
-        "Return STRICT JSON only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nSchema:\n{{\n  \"target_files\": [\"src/path.rs\"],\n  \"target_symbols\": [\"fn_name_or_module\"],\n  \"behavior_delta\": \"one concrete behavior improvement\",\n  \"test_delta\": \"one concrete test change\",\n  \"commit_subject\": \"fix(scope): specific change\"\n}}\n\nRules:\n- Output JSON object only.\n- Be concrete and executable.\n- Must target src/ and tests.\n- No docs-only plans.\n- No extra keys.",
+        "Return STRICT JSON only.\n\nCycle: {cycle}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nSchema:\n{{\n  \"target_files\": [\"src/path.rs\"],\n  \"target_symbols\": [\"fn_name_or_module\"],\n  \"behavior_delta\": \"one concrete behavior improvement\",\n  \"test_delta\": \"one concrete test change\",\n  \"commit_subject\": \"fix(scope): specific change\"\n}}\n\nRules:\n- Output JSON object only.\n- Be concrete and executable.\n- Must target src/ and tests.\n- No docs-only plans.\n- Do not mutate the working tree during planning.\n- No extra keys.",
         cycle = ctx.cycle,
         task = selected_task.title,
         source = selected_task.source,
@@ -1895,7 +2002,7 @@ fn build_agent_cli_json_only_prompt_with_attempt(
     let nrp = load_nrp_protocol(&ctx.repo_path);
     let research = load_latest_research_context(&ctx.repo_path);
     format!(
-        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nValidated execution plan (must follow exactly):\n{validated_plan}\n\nPlan summary:\n- target_files: {target_files}\n- target_symbols: {target_symbols}\n- behavior_delta: {behavior_delta}\n- test_delta: {test_delta}\n- commit_subject: {commit_subject}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not include extra keys.",
+        "Return STRICT JSON only for code edits.\n\nCycle: {cycle}\nAttempt: {attempt}/{attempt_limit}\nTask: {task}\nTask source: {source}\nTask line: {line}\nUser prompt: {user_prompt}\nPrevious error: {previous_error}\n\nValidated execution plan (must follow exactly):\n{validated_plan}\n\nPlan summary:\n- target_files: {target_files}\n- target_symbols: {target_symbols}\n- behavior_delta: {behavior_delta}\n- test_delta: {test_delta}\n- commit_subject: {commit_subject}\n\nRepository snapshot:\n{snapshot}\n\nResearch context:\n{research}\n\nNRP protocol:\n{nrp}\n\nSchema:\n{{\n  \"rationale\": \"short explanation\",\n  \"acceptance_checks\": [\"check 1\", \"check 2\"],\n  \"edits\": [{{\"path\":\"relative/path\",\"content\":\"full file content\"}}]\n}}\n\nRules:\n- Output JSON object only, no markdown fences.\n- Keep edits minimal and task-focused.\n- Prefer existing files over creating new files unless required.\n- Prefer src/ + tests when task is code.\n- Do not edit files directly; the harness applies the returned JSON edits.\n- Do not include extra keys.",
         cycle = ctx.cycle,
         attempt = attempt,
         attempt_limit = AGENT_CLI_ATTEMPTS_PER_CYCLE,
@@ -1999,6 +2106,53 @@ fn extract_openclaw_payload_text(stdout: &str) -> Option<String> {
         .get("text")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+fn env_trimmed(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn env_trimmed_or(name: &str, default: &str) -> String {
+    env_trimmed(name).unwrap_or_else(|| default.to_string())
+}
+
+fn agent_payload_file(repo_path: &Path, agent_name: &str, session_id: &str) -> Result<PathBuf> {
+    let dir = repo_path.join(".harness/supercycle/agent-output");
+    fs::create_dir_all(&dir)
+        .with_context(|| format!("failed to create agent output dir: {}", dir.display()))?;
+    Ok(dir.join(format!(
+        "{}-{}-last-message.txt",
+        agent_name,
+        sanitize_agent_artifact_name(session_id)
+    )))
+}
+
+fn sanitize_agent_artifact_name(input: &str) -> String {
+    let sanitized = input
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "session".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn read_agent_payload_file(path: &Path) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
 }
 
 fn extract_json_edits_payload(message: &str) -> Option<(Vec<String>, String)> {
@@ -3991,6 +4145,20 @@ mod tests {
             vec!["hermes".to_string(), "chat".to_string()]
         );
 
+        let claude = AgentCli::for_preset(ExecutorPreset::Claude).unwrap();
+        assert_eq!(claude.name(), "claude");
+        assert_eq!(
+            claude.argv_preview(),
+            vec!["claude".to_string(), "--print".to_string()]
+        );
+
+        let codex = AgentCli::for_preset(ExecutorPreset::Codex).unwrap();
+        assert_eq!(codex.name(), "codex");
+        assert_eq!(
+            codex.argv_preview(),
+            vec!["codex".to_string(), "exec".to_string()]
+        );
+
         assert!(AgentCli::for_preset(ExecutorPreset::Cargo).is_none());
     }
 
@@ -4102,6 +4270,20 @@ mod tests {
         assert!(!should_run_codegen_stage(None));
         let hermes = AgentCli::hermes();
         assert!(should_run_codegen_stage(Some(&hermes)));
+        let codex = AgentCli::codex();
+        assert!(should_run_codegen_stage(Some(&codex)));
+    }
+
+    #[test]
+    fn agent_payload_artifact_names_are_safe() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = agent_payload_file(dir.path(), "codex", "run:with/slashes").unwrap();
+        assert!(path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap()
+            .contains("run-with-slashes"));
+        assert!(path.parent().unwrap().exists());
     }
 
     #[test]

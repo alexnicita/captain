@@ -16,7 +16,7 @@ Captain is a governance harness for autonomous coding agents. It records and gat
 - **Network isolation:** a governed command can still use network access available to the host.
 - **Container/VM isolation:** Captain does not automatically create a disposable sandbox.
 - **Secret redaction:** event logs may include private paths, prompts, command output, diffs, errors, or repo names.
-- **Remote channel trust:** OpenClaw/Hermes messaging integrations must be sender-gated outside Captain.
+- **Remote channel trust:** Agent messaging integrations such as OpenClaw or Hermes must be sender-gated outside Captain.
 
 ## Recommended Isolation Levels
 

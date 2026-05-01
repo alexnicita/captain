@@ -33,7 +33,7 @@ Required:
   --time                Duration (e.g. 3600, 45m, 1h)
 
 Optional:
-  --executor            cargo|shell|openclaw|hermes (default: cargo)
+  --executor            cargo|shell|openclaw|hermes|claude|codex (default: cargo)
   --heartbeat-sec       Coding heartbeat interval (default: 30)
   --cycle-pause-sec     Pause between cycles in seconds (default: 2)
   --prompt              Optional user-session prompt string
@@ -48,8 +48,10 @@ Optional:
   --push-each-cycle     Attempt push after commit
 
 Environment:
-  CAPTAIN_CLEANUP_AUTO=1          Run guarded storage cleanup before harness start
-  CAPTAIN_CLEANUP_MIN_FREE_GB=N   Free-space threshold for automatic cleanup
+  CAPTAIN_CLEANUP_AUTO=1              Run guarded storage cleanup before harness start
+  CAPTAIN_CLEANUP_MIN_FREE_GB=N       Free-space threshold for automatic cleanup
+  CAPTAIN_CLAUDE_TOOLS=Read,Grep,...  Claude Code tool allowlist (default: Read,Grep,Glob,LS)
+  CAPTAIN_CODEX_SANDBOX=read-only     Codex sandbox mode for JSON-edit generation
 
 Examples:
   captain/harnesses/rust-harness/scripts/harness.sh --repo /path/to/repo --time 1h
@@ -164,12 +166,19 @@ PY
   fi
 fi
 
-if [[ -z "${OPENAI_API_KEY:-}" && "$EXECUTOR" != "hermes" ]]; then
+executor_uses_own_auth() {
+  case "$EXECUTOR" in
+    hermes|claude|claude-code|codex) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [[ -z "${OPENAI_API_KEY:-}" ]] && ! executor_uses_own_auth; then
   echo "[harness] error: OPENAI_API_KEY is unset and no OpenClaw auth profile credential was found." >&2
   echo "[harness] hint: run 'openclaw models status --json' to verify configured auth profiles." >&2
   exit 4
-elif [[ -z "${OPENAI_API_KEY:-}" && "$EXECUTOR" == "hermes" ]]; then
-  echo "[harness] OPENAI_API_KEY is unset; hermes executor will use Hermes auth/config."
+elif [[ -z "${OPENAI_API_KEY:-}" ]] && executor_uses_own_auth; then
+  echo "[harness] OPENAI_API_KEY is unset; $EXECUTOR executor will use its own auth/config."
 fi
 
 "$ROOT_DIR/scripts/check_toolchain.sh"

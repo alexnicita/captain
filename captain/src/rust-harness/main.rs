@@ -692,8 +692,10 @@ fn parse_executor_preset(input: &str) -> Result<ExecutorPreset> {
         "cargo" => Ok(ExecutorPreset::Cargo),
         "openclaw" => Ok(ExecutorPreset::OpenClaw),
         "hermes" => Ok(ExecutorPreset::Hermes),
+        "claude" | "claude-code" => Ok(ExecutorPreset::Claude),
+        "codex" => Ok(ExecutorPreset::Codex),
         other => Err(anyhow!(
-            "invalid --executor '{other}' (expected 'shell', 'cargo', 'openclaw', or 'hermes')"
+            "invalid --executor '{other}' (expected 'shell', 'cargo', 'openclaw', 'hermes', 'claude', or 'codex')"
         )),
     }
 }
@@ -855,6 +857,22 @@ mod tests {
         assert!(matches!(
             parse_executor_preset("hermes").unwrap(),
             ExecutorPreset::Hermes
+        ));
+    }
+
+    #[test]
+    fn parse_executor_preset_accepts_claude_and_codex() {
+        assert!(matches!(
+            parse_executor_preset("claude").unwrap(),
+            ExecutorPreset::Claude
+        ));
+        assert!(matches!(
+            parse_executor_preset("claude-code").unwrap(),
+            ExecutorPreset::Claude
+        ));
+        assert!(matches!(
+            parse_executor_preset("codex").unwrap(),
+            ExecutorPreset::Codex
         ));
     }
 

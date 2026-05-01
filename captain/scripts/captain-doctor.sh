@@ -17,8 +17,8 @@ Checks:
   - required local tools
   - Node.js 24 recommended / 22.14+ minimum
   - Rust toolchain readiness
-  - OpenClaw CLI presence
-  - model credential availability
+  - agent CLI presence (OpenClaw, Hermes, Claude Code, or Codex)
+  - provider or agent credential availability
   - writable workspace and private zone
   - risky OpenClaw config hints
 EOF
@@ -71,19 +71,39 @@ if command -v rustc >/dev/null 2>&1; then
   ok "rustc $(rustc --version | awk '{print $2}')"
 fi
 
+agent_cli_count=0
+agent_own_auth_count=0
+
 if command -v openclaw >/dev/null 2>&1; then
+  agent_cli_count=$((agent_cli_count + 1))
   ok "openclaw found"
   openclaw status >/dev/null 2>&1 && ok "openclaw status responded" || warn "openclaw status did not complete; run openclaw onboard if this is a fresh setup"
 else
-  fail "openclaw missing; install with npm install -g openclaw@latest or run captain/scripts/setup-openclaw-captain.sh"
+  warn "openclaw missing; install with npm install -g openclaw@latest or run captain/scripts/setup-openclaw-captain.sh"
+fi
+
+for agent in hermes claude codex; do
+  if command -v "$agent" >/dev/null 2>&1; then
+    agent_cli_count=$((agent_cli_count + 1))
+    agent_own_auth_count=$((agent_own_auth_count + 1))
+    ok "$agent found"
+  else
+    warn "$agent missing"
+  fi
+done
+
+if [[ "$agent_cli_count" -eq 0 ]]; then
+  fail "no supported agent CLI found; install OpenClaw, Hermes, Claude Code, or Codex"
 fi
 
 if [[ -n "${OPENAI_API_KEY:-}" ]]; then
   ok "OPENAI_API_KEY is set"
 elif [[ -f "$AUTH_PROFILES" ]]; then
   ok "OpenClaw auth profiles found at $AUTH_PROFILES"
+elif [[ "$agent_own_auth_count" -gt 0 ]]; then
+  warn "no OPENAI_API_KEY and no OpenClaw auth profile store found; Hermes/Claude/Codex executors may still use their own auth/config"
 else
-  fail "no OPENAI_API_KEY and no OpenClaw auth profile store found at $AUTH_PROFILES"
+  fail "no OPENAI_API_KEY, no OpenClaw auth profile store, and no agent-local auth executor found"
 fi
 
 if [[ -d "$OPENCLAW_WORKSPACE" && -w "$OPENCLAW_WORKSPACE" ]]; then

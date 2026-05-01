@@ -2,7 +2,7 @@
 
 Captain turns autonomous coding agents into governed coding runs.
 
-It is a local-first harness for OpenClaw, Codex-style agents, and other tool-using coding agents that need more than a prompt: runtime budgets, command policy, phase logs, replayable JSONL events, commit discipline, and operator-visible release gates.
+It is a local-first harness for OpenClaw, Hermes, Claude Code, Codex, and other tool-using coding agents that need more than a prompt: runtime budgets, command policy, phase logs, replayable JSONL events, commit discipline, and operator-visible release gates.
 
 The operating idea is simple: agents can work longer when the run has a flight recorder.
 
@@ -11,12 +11,12 @@ The operating idea is simple: agents can work longer when the run has a flight r
 - Runs timeboxed coding sessions against a target repo.
 - Emits stable JSONL events for replay, eval, and regression checks.
 - Enforces command allowlists, runtime limits, no-op detection, and commit-quality gates.
-- Integrates with OpenClaw or Hermes as agent CLI executors while preserving a stable local CLI runner.
+- Integrates with OpenClaw, Hermes, Claude Code, or Codex as agent CLI executors while preserving a stable local CLI runner.
 - Keeps personal/operator files private by default.
 
-## Use Captain on an OpenClaw or Hermes machine
+## Use Captain on an Agent Machine
 
-Captain is for the machine where your agents already live: an EC2 instance or MacBook with OpenClaw, Hermes, or another coding-agent CLI installed. Add Captain to that box, put `captain` on `PATH`, and run agents through Captain when you want better control: timeboxes, logs, command policy, commit gates, replayable events, and opt-in pushes.
+Captain is for the machine where your agents already live: an EC2 instance or MacBook with OpenClaw, Hermes, Claude Code, Codex, or another coding-agent CLI installed. Add Captain to that box, put `captain` on `PATH`, and run agents through Captain when you want better control: timeboxes, logs, command policy, commit gates, replayable events, and opt-in pushes.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexnicita/captain/main/install.sh | bash
@@ -44,6 +44,13 @@ captain openclaw "implement the next scoped improvement" \
   --commit-each-cycle
 ```
 
+Run Claude Code or Codex through the same harness:
+
+```bash
+captain claude "tighten the parser tests" --repo /path/to/target/repo --time 30m
+captain codex "refactor the flaky fixture loader" --repo /path/to/target/repo --time 30m
+```
+
 Preview the exact lower-level harness command without launching an agent:
 
 ```bash
@@ -55,6 +62,8 @@ Use explicit executor mode when building scripts or APIs around Captain:
 ```bash
 captain code --executor hermes --prompt "ship useful code" --repo . --time 30m
 captain code --executor openclaw --prompt "review and improve this PR" --repo . --time 1h
+captain code --executor claude --prompt "add regression tests" --repo . --time 30m
+captain code --executor codex --prompt "simplify this module" --repo . --time 30m
 ```
 
 Pushes are opt-in. `--commit-each-cycle` can create local commits; add `--push-each-cycle` only when you intentionally want Captain to push after successful committed cycles.
@@ -64,11 +73,13 @@ These shortcuts route through the stable harness interface:
 ```bash
 captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor openclaw
 captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor hermes
+captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor claude
+captain/harnesses/rust-harness/scripts/harness.sh --repo <path> --time <duration> --executor codex
 ```
 
 ## Why This Exists
 
-OpenClaw, Hermes, Codex-style CLIs, and similar agents make it easy to give a model real tools and persistent workspace access. Captain adds the governance layer around that power:
+OpenClaw, Hermes, Claude Code, Codex, and similar agents make it easy to give a model real tools and persistent workspace access. Captain adds the governance layer around that power:
 
 - **Policy**: commands and tools are explicit.
 - **Evidence**: every phase and gate emits structured events.
@@ -103,8 +114,8 @@ OpenClaw, Hermes, Codex-style CLIs, and similar agents make it easy to give a mo
 
 - Node.js 24 recommended, Node.js 22.14+ minimum.
 - Rust 1.76+ for `captain/harnesses/rust-harness`.
-- OpenClaw CLI for `--executor openclaw`, or Hermes CLI for `--executor hermes`.
-- A model credential via `OPENAI_API_KEY` / OpenClaw auth profiles, or Hermes auth/config for Hermes runs.
+- OpenClaw CLI for `--executor openclaw`, Hermes CLI for `--executor hermes`, Claude Code CLI for `--executor claude`, or Codex CLI for `--executor codex`.
+- A model credential via `OPENAI_API_KEY` / OpenClaw auth profiles, or the selected agent CLI's own auth/config for Hermes, Claude Code, and Codex runs.
 
 ## Verification
 
@@ -169,7 +180,7 @@ Captain is designed for local operator control, but governed agents still run re
 - Keep confidential repos under `captain/private/`.
 - Use command allowlists for non-default tools.
 - Review `runs/events.jsonl` before sharing any run artifact publicly.
-- Read `SECURITY.md` and `docs/captain/security-threat-model.md` before exposing OpenClaw/Hermes channels or remote access.
+- Read `SECURITY.md` and `docs/captain/security-threat-model.md` before exposing agent channels or remote access.
 - Treat Captain as governance, not a VM/container sandbox; use disposable isolation for untrusted prompts or repos.
 
 ## Optional Knowledge Base

@@ -12,6 +12,8 @@ Captain CLI
 Usage:
   captain hermes <prompt> [options]
   captain openclaw <prompt> [options]
+  captain claude <prompt> [options]
+  captain codex <prompt> [options]
   captain shell <prompt> [options]
   captain cargo <prompt> [options]
   captain code --executor <executor> [--prompt <prompt>] [options]
@@ -20,6 +22,8 @@ Usage:
 Agent shortcuts:
   captain hermes <prompt>      Run a governed Hermes coding session
   captain openclaw <prompt>    Run a governed OpenClaw coding session
+  captain claude <prompt>      Run a governed Claude Code coding session
+  captain codex <prompt>       Run a governed Codex coding session
   captain shell <prompt>       Run a governed shell/local coding session
   captain cargo <prompt>       Run a governed cargo/local coding session
 
@@ -43,6 +47,8 @@ Common options:
 Examples:
   captain hermes "fix the failing tests" --repo . --time 45m --commit-each-cycle
   captain openclaw "implement issue #12" --repo ~/repo --time 1h --runtime-log-file runs/openclaw.log
+  captain claude "tighten the parser tests" --repo . --time 30m
+  captain codex "refactor the flaky fixture loader" --repo . --time 30m
   captain code --executor hermes --prompt "ship useful code" --repo . --time 30m
 
 Install for interactive use:
@@ -105,8 +111,15 @@ DRY_RUN=0
 FORWARD=()
 
 case "$SUBCOMMAND" in
-  hermes|openclaw|shell|cargo)
+  hermes|openclaw|claude|codex|shell|cargo)
     EXECUTOR="$SUBCOMMAND"
+    if [[ $# -gt 0 && "${1:-}" != --* ]]; then
+      PROMPT="$1"
+      shift
+    fi
+    ;;
+  claude-code)
+    EXECUTOR="claude"
     if [[ $# -gt 0 && "${1:-}" != --* ]]; then
       PROMPT="$1"
       shift
@@ -180,7 +193,9 @@ elif [[ -n "$PROMPT_FILE" ]]; then
   CMD+=(--prompt-file "$PROMPT_FILE")
 fi
 
-CMD+=("${FORWARD[@]}")
+if [[ ${#FORWARD[@]} -gt 0 ]]; then
+  CMD+=("${FORWARD[@]}")
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "captain.resolved_command=$(shell_join_pretty "${CMD[@]}")"

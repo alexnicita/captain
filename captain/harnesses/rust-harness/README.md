@@ -84,6 +84,8 @@ agent-harness code --repo /path/to/repo --time 1h
 agent-harness code --repo . --time 45m --executor shell --allow-cmd ls --plan-cmd "git status --short" --act-cmd "ls -la" --verify-cmd "git diff --stat"
 agent-harness code --repo . --time 1h --executor openclaw --prompt "implement feature X with tests"
 agent-harness code --repo . --time 1h --executor hermes --prompt "implement feature X with tests"
+agent-harness code --repo . --time 1h --executor claude --prompt "implement feature X with tests"
+agent-harness code --repo . --time 1h --executor codex --prompt "implement feature X with tests"
 agent-harness code --repo . --time 1h --prompt "optional session prompt"
 agent-harness replay --path ./runs/events.jsonl
 agent-harness replay --path ./runs/events.jsonl --latest-run
@@ -142,9 +144,9 @@ Default "run as-is" settings target Codex 5.3 via OpenAI Responses API:
 
 `echo` / `http-stub` are useful for scaffolding, but they will not generate meaningful code patches.
 
-If you want the coding step to call an installed agent CLI itself, use `--executor openclaw` or `--executor hermes`.
-Both modes share the same agent-runner abstraction: the feature stage sends selected task + repo snapshot to the agent CLI and enforces a strict JSON edit contract (`rationale`, `acceptance_checks`, `edits`) with adaptive retries before applying edits through the harness.
-OpenClaw uses `openclaw agent --local --agent main --json`; Hermes uses `hermes chat --quiet -q ...` with `terminal,skills` toolsets by default. Override Hermes toolsets with `CAPTAIN_HERMES_TOOLSETS`.
+If you want the coding step to call an installed agent CLI itself, use `--executor openclaw`, `--executor hermes`, `--executor claude`, or `--executor codex`.
+All agent modes share the same agent-runner abstraction: the feature stage sends selected task + repo snapshot to the agent CLI and enforces a strict JSON edit contract (`rationale`, `acceptance_checks`, `edits`) with adaptive retries before applying edits through the harness.
+OpenClaw uses `openclaw agent --local --agent main --json`; Hermes uses `hermes chat --quiet -q ...` with `terminal,skills` toolsets by default; Claude Code uses `claude --print`; Codex uses `codex exec`. Override Hermes toolsets with `CAPTAIN_HERMES_TOOLSETS`, Claude Code tools with `CAPTAIN_CLAUDE_TOOLS`, and Codex sandboxing with `CAPTAIN_CODEX_SANDBOX`.
 
 ## Dogfood workflow (harness-on-harness)
 
@@ -238,7 +240,7 @@ It outputs cycle/act/commit metrics and a simple `quality_score_100` so regressi
 ## Troubleshooting quick hits (coding mode)
 
 - `coding.lock.exists`: another run already owns the repo lock. Stop the active run or remove stale lock file if the process is gone.
-- repeated `corrupt patch at line ...`: provider emitted malformed unified diff hunks; inspect `.harness/tmp/llm-patch-*.diff` and prefer supercycle agent CLI JSON-edit path (`openclaw` or `hermes`) for recovery.
+- repeated `corrupt patch at line ...`: provider emitted malformed unified diff hunks; inspect `.harness/tmp/llm-patch-*.diff` and prefer supercycle agent CLI JSON-edit path (`openclaw`, `hermes`, `claude`, or `codex`) for recovery.
 - repeated `repo has pending changes; continue current feature thread` + verify failures: run likely entered dirty-tree spin; stop run, clean/reset working tree, then restart.
 - `forced scoped code-change task produced no meaningful diff`: your act stage is not producing real scoped changes. Update `--act-cmd` to perform concrete edits.
 - `commit subject rejected by quality gate`: generated subject was generic or did not mention changed scope. Check staged files and subject generation inputs.

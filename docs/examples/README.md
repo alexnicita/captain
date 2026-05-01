@@ -1,6 +1,6 @@
 # Captain Examples
 
-These examples are copy-paste launch scenarios for OpenClaw/Codex-style autonomous coding agents.
+These examples are copy-paste launch scenarios for OpenClaw, Hermes, Claude Code, Codex, and similar autonomous coding agents.
 
 - `safe-pr-review.sh` runs a governed review-focused pass.
 - `one-hour-coding-sprint.sh` runs the standard one-hour coding sprint.

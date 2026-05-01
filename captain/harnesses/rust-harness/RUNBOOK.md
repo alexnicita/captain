@@ -55,7 +55,7 @@ cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h --
 Useful flags:
 
 ```bash
---executor cargo|shell|openclaw|hermes
+--executor cargo|shell|openclaw|hermes|claude|codex
 --plan-cmd "..." --act-cmd "..." --verify-cmd "..."   # repeatable
 --allow-cmd "<binary>"                                    # extends allowlist
 --commit-each-cycle --push-each-cycle
@@ -81,7 +81,7 @@ Coding mode guarantees the phase order each cycle:
 
 If the repo is clean at architecture phase, the harness selects the next feature task from internal docs (`ARCHITECTURE.md`, `README.md`, `RUNBOOK.md`, `MIGRATION.md`) before running feature work.
 
-Agent CLI executors (`openclaw`, `hermes`) use the same JSON-edit harness path. OpenClaw is invoked through `openclaw agent`; Hermes is invoked through `hermes chat --quiet -q ...` and uses `CAPTAIN_HERMES_TOOLSETS` when you need to override the default `terminal,skills` toolsets.
+Agent CLI executors (`openclaw`, `hermes`, `claude`, `codex`) use the same JSON-edit harness path. OpenClaw is invoked through `openclaw agent`; Hermes is invoked through `hermes chat --quiet -q ...` and uses `CAPTAIN_HERMES_TOOLSETS`; Claude Code is invoked through `claude --print` and uses `CAPTAIN_CLAUDE_TOOLS`; Codex is invoked through `codex exec` and uses `CAPTAIN_CODEX_SANDBOX`.
 
 Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_resolution`, `commit`, `push`) so operators can see clean merges vs conflicts and unresolved/conflict-resolution status.
 
@@ -134,7 +134,7 @@ cargo run -- run --objective "debug" --deny-tool echo
 - **excess retries**: lower `provider.max_retries` or validate endpoint/auth
 - **empty replay**: confirm `event_log_path` and file permissions
 - **`coding.lock.exists`**: another coding run already owns the lock; stop it first (or remove stale lock if process is gone).
-- **`corrupt patch at line ...`**: malformed provider diff output; inspect `.harness/tmp/llm-patch-*.diff` and retry with the supercycle agent CLI JSON-edit path (`openclaw` or `hermes`).
+- **`corrupt patch at line ...`**: malformed provider diff output; inspect `.harness/tmp/llm-patch-*.diff` and retry with the supercycle agent CLI JSON-edit path (`openclaw`, `hermes`, `claude`, or `codex`).
 - **dirty-tree spin** (`repo has pending changes; continue current feature thread`): stop run, clean/reset tree, rerun from clean state.
 - **forced no-diff abort**: your act phase is not producing meaningful scoped changes; tighten `--act-cmd` and validate with `git diff --stat`.
 - **commit subject rejected by quality gate**: subject was generic or lacked changed-file scope; inspect staged names and commit event payload (`subject`, `detail`).

@@ -36,6 +36,14 @@ bash captain/bin/captain --help | grep -q "captain hermes <prompt>" || {
   echo "captain CLI help must document the Hermes shortcut" >&2
   exit 1
 }
+bash captain/bin/captain --help | grep -q "captain claude <prompt>" || {
+  echo "captain CLI help must document the Claude Code shortcut" >&2
+  exit 1
+}
+bash captain/bin/captain --help | grep -q "captain codex <prompt>" || {
+  echo "captain CLI help must document the Codex shortcut" >&2
+  exit 1
+}
 cli_dry_run="$(bash captain/bin/captain hermes "ship useful code" --repo /tmp/example-repo --time 45m --runtime-log-file /tmp/captain.log --commit-each-cycle --dry-run)"
 grep -q 'harness.sh' <<<"$cli_dry_run" || {
   echo "captain CLI must route agent shortcuts through the canonical harness entrypoint" >&2
@@ -61,6 +69,16 @@ grep -q -- '--commit-each-cycle' <<<"$cli_dry_run" || {
   echo "captain CLI must forward commit settings" >&2
   exit 1
 }
+claude_dry_run="$(bash captain/bin/captain claude "ship useful code" --repo /tmp/example-repo --time 30m --dry-run)"
+grep -q -- '--executor claude' <<<"$claude_dry_run" || {
+  echo "captain claude must select the claude executor" >&2
+  exit 1
+}
+codex_dry_run="$(bash captain/bin/captain codex "ship useful code" --repo /tmp/example-repo --time 30m --dry-run)"
+grep -q -- '--executor codex' <<<"$codex_dry_run" || {
+  echo "captain codex must select the codex executor" >&2
+  exit 1
+}
 
 heartbeat_state="$(mktemp "${TMPDIR:-/tmp}/captain-heartbeat.XXXXXX")"
 rm -f "$heartbeat_state"
@@ -70,9 +88,9 @@ HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.s
 
 cleanup_root="$(mktemp -d "${TMPDIR:-/tmp}/captain-storage-guard.XXXXXX")"
 trap 'rm -f "$heartbeat_state"; rm -rf "$cleanup_root"' EXIT
-mkdir -p "$cleanup_root/workspace/tmp/old" "$cleanup_root/workspace/tmp_research/old" "$cleanup_root/openclaw" "$cleanup_root/hermes"
-touch "$cleanup_root/workspace/tmp/old/file" "$cleanup_root/workspace/tmp_research/old/file" "$cleanup_root/openclaw/keep" "$cleanup_root/hermes/keep"
-cleanup_output="$(OPENCLAW_HOME="$cleanup_root/openclaw" HERMES_HOME="$cleanup_root/hermes" OPENCLAW_WORKSPACE="$cleanup_root/workspace" CAPTAIN_CLEANUP_DRY_RUN=1 bash captain/scripts/storage_guard.sh --auto --min-free-gb 9999)"
+mkdir -p "$cleanup_root/workspace/tmp/old" "$cleanup_root/workspace/tmp_research/old" "$cleanup_root/openclaw" "$cleanup_root/hermes" "$cleanup_root/claude" "$cleanup_root/codex"
+touch "$cleanup_root/workspace/tmp/old/file" "$cleanup_root/workspace/tmp_research/old/file" "$cleanup_root/openclaw/keep" "$cleanup_root/hermes/keep" "$cleanup_root/claude/keep" "$cleanup_root/codex/keep"
+cleanup_output="$(OPENCLAW_HOME="$cleanup_root/openclaw" HERMES_HOME="$cleanup_root/hermes" CLAUDE_HOME="$cleanup_root/claude" CODEX_HOME="$cleanup_root/codex" OPENCLAW_WORKSPACE="$cleanup_root/workspace" CAPTAIN_CLEANUP_DRY_RUN=1 bash captain/scripts/storage_guard.sh --auto --min-free-gb 9999)"
 grep -q 'dry_run=1' <<<"$cleanup_output" || {
   echo "storage guard must support dry-run cleanup planning" >&2
   exit 1
@@ -85,8 +103,16 @@ grep -q 'preserve=.*hermes' <<<"$cleanup_output" || {
   echo "storage guard must explicitly preserve Hermes paths" >&2
   exit 1
 }
-[[ -f "$cleanup_root/openclaw/keep" && -f "$cleanup_root/hermes/keep" ]] || {
-  echo "storage guard must not remove OpenClaw or Hermes installations" >&2
+grep -q 'preserve=.*claude' <<<"$cleanup_output" || {
+  echo "storage guard must explicitly preserve Claude Code paths" >&2
+  exit 1
+}
+grep -q 'preserve=.*codex' <<<"$cleanup_output" || {
+  echo "storage guard must explicitly preserve Codex paths" >&2
+  exit 1
+}
+[[ -f "$cleanup_root/openclaw/keep" && -f "$cleanup_root/hermes/keep" && -f "$cleanup_root/claude/keep" && -f "$cleanup_root/codex/keep" ]] || {
+  echo "storage guard must not remove agent installations" >&2
   exit 1
 }
 grep -q 'CAPTAIN_CLEANUP_AUTO' captain/harnesses/rust-harness/scripts/harness.sh || {

@@ -1,6 +1,6 @@
 # Harness Framework
 
-This folder is the framework layer for governing autonomous coding behavior for **OpenClaw** and similar agent systems.
+This folder is the framework layer for governing autonomous coding behavior for **OpenClaw, Hermes, Claude Code, Codex**, and similar agent systems.
 
 Related scaffold at repo root:
 - `captain/knowledge/` for strategic reference material
