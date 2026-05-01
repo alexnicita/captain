@@ -2,11 +2,14 @@ use agent_harness::coding::{
     parse_duration_seconds, run_coding_loop, CodingRunArgs, ExecutorPreset,
 };
 use agent_harness::config::AppConfig;
-use agent_harness::eval::evaluate_replay;
+use agent_harness::eval::evaluate_events;
 use agent_harness::events::{kinds, now_unix, EventSink, HarnessEvent};
+use agent_harness::model_profile::ModelProfile;
 use agent_harness::orchestrator::{Orchestrator, TaskSpec};
 use agent_harness::provider::build_provider;
-use agent_harness::replay::{replay_file_with_filter, ReplayFilter};
+use agent_harness::replay::{
+    replay_events_file_with_filter, replay_file_with_filter, ReplayFilter,
+};
 use agent_harness::runtime_gate::{
     gate_start, gate_status, gate_stop, GateStartArgs, GateStatusArgs, GateStopArgs,
 };
@@ -408,6 +411,7 @@ async fn run_once(
     let provider_requested = built_provider.requested_kind.clone();
     let provider_resolved = built_provider.resolved_kind.clone();
     let provider_fallback_reason = built_provider.fallback_reason.clone();
+    let model_profile = ModelProfile::for_model(&cfg.provider.model);
     let provider = built_provider.provider;
 
     let tools = ToolRegistry::with_defaults();
@@ -419,6 +423,7 @@ async fn run_once(
         "provider_resolved": provider_resolved,
         "provider_fallback_reason": provider_fallback_reason,
         "model": cfg.provider.model.clone(),
+        "model_profile": model_profile,
     })))?;
 
     let orchestrator = Orchestrator {
@@ -493,6 +498,7 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
     let provider_requested = built_provider.requested_kind.clone();
     let provider_resolved = built_provider.resolved_kind.clone();
     let provider_fallback_reason = built_provider.fallback_reason.clone();
+    let model_profile = ModelProfile::for_model(&cfg.provider.model);
     let provider = built_provider.provider;
 
     let tools = ToolRegistry::with_defaults();
@@ -504,6 +510,7 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
         "provider_resolved": provider_resolved,
         "provider_fallback_reason": provider_fallback_reason,
         "model": cfg.provider.model.clone(),
+        "model_profile": model_profile,
         "objectives_file": objectives_file,
     })))?;
 
@@ -774,14 +781,13 @@ async fn eval(
     cfg: &AppConfig,
 ) -> Result<()> {
     let p = path.unwrap_or(&cfg.event_log_path);
-    let summary = replay_file_with_filter(
-        p,
-        &ReplayFilter {
-            run_id: run_id.map(|s| s.to_string()),
-            latest_run,
-        },
-    )?;
-    let report = evaluate_replay(&summary);
+    let filter = ReplayFilter {
+        run_id: run_id.map(|s| s.to_string()),
+        latest_run,
+    };
+    let events = replay_events_file_with_filter(p, &filter)?;
+    let summary = replay_file_with_filter(p, &filter)?;
+    let report = evaluate_events(&summary, &events);
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }

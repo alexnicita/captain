@@ -1,5 +1,7 @@
 use crate::events::kinds;
+use crate::events::HarnessEvent;
 use crate::replay::ReplaySummary;
+use crate::run_analysis::{RunMetrics, RunMetricsCollector, RunRollups};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -7,6 +9,10 @@ use std::collections::BTreeSet;
 pub struct EvalReport {
     pub pass: bool,
     pub checks: Vec<EvalCheck>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<RunMetrics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollups: Option<RunRollups>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +23,73 @@ pub struct EvalCheck {
 }
 
 pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
+    let checks = evaluate_summary_checks(summary);
+    let pass = checks.iter().all(|c| c.pass);
+    EvalReport {
+        pass,
+        checks,
+        metrics: None,
+        rollups: None,
+    }
+}
+
+pub fn evaluate_events(summary: &ReplaySummary, events: &[HarnessEvent]) -> EvalReport {
+    let mut checks = evaluate_summary_checks(summary);
+    let (metrics, rollups) = RunMetricsCollector::collect(events);
+
+    let unknown_errors = metrics
+        .error_counts_by_class
+        .get(&crate::error_taxonomy::ErrorClass::Unknown)
+        .copied()
+        .unwrap_or(0);
+    checks.push(EvalCheck {
+        name: "no_unknown_errors".to_string(),
+        pass: unknown_errors == 0,
+        detail: format!("unknown_errors={unknown_errors}"),
+    });
+
+    if metrics.provider_requests > 0 {
+        let timeout_rate = metrics.provider_timeouts as f64 / metrics.provider_requests as f64;
+        checks.push(EvalCheck {
+            name: "provider_timeout_rate_under_threshold".to_string(),
+            pass: timeout_rate <= 0.10,
+            detail: format!(
+                "provider_timeouts={} provider_requests={} rate={timeout_rate:.3}",
+                metrics.provider_timeouts, metrics.provider_requests
+            ),
+        });
+    }
+
+    if metrics.tool_calls > 0 {
+        let tool_error_rate = metrics.tool_errors as f64 / metrics.tool_calls as f64;
+        checks.push(EvalCheck {
+            name: "tool_error_rate_under_threshold".to_string(),
+            pass: tool_error_rate <= 0.05,
+            detail: format!(
+                "tool_errors={} tool_calls={} rate={tool_error_rate:.3}",
+                metrics.tool_errors, metrics.tool_calls
+            ),
+        });
+    }
+
+    if metrics.cycles_total > 0 {
+        checks.push(EvalCheck {
+            name: "coding_quality_score_minimum".to_string(),
+            pass: metrics.quality_score_100 >= 70,
+            detail: format!("quality_score_100={}", metrics.quality_score_100),
+        });
+    }
+
+    let pass = checks.iter().all(|c| c.pass);
+    EvalReport {
+        pass,
+        checks,
+        metrics: Some(metrics),
+        rollups: Some(rollups),
+    }
+}
+
+fn evaluate_summary_checks(summary: &ReplaySummary) -> Vec<EvalCheck> {
     let mut checks = Vec::new();
 
     checks.push(EvalCheck {
@@ -117,45 +190,17 @@ pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
         },
     });
 
-    let pass = checks.iter().all(|c| c.pass);
-    EvalReport { pass, checks }
+    checks
 }
 
 fn known_kinds() -> BTreeSet<&'static str> {
-    BTreeSet::from([
-        kinds::RUN_STARTED,
-        kinds::RUN_FINISHED,
-        kinds::TASK_STARTED,
-        kinds::TASK_FINISHED,
-        kinds::PROVIDER_REQUEST,
-        kinds::PROVIDER_RESPONSE,
-        kinds::PROVIDER_RETRY,
-        kinds::PROVIDER_TIMEOUT,
-        kinds::PROVIDER_ERROR,
-        kinds::TOOL_CALL,
-        kinds::TOOL_OUTPUT,
-        kinds::TOOL_ERROR,
-        kinds::SCHEDULER_DISPATCH,
-        kinds::SCHEDULER_RESULT,
-        kinds::SCHEDULER_TICK,
-        kinds::CLI_RUN_SUMMARY,
-        kinds::CLI_BATCH_SUMMARY,
-        kinds::CODING_RUN_STARTED,
-        kinds::CODING_RUN_FINISHED,
-        kinds::CODING_HEARTBEAT,
-        kinds::CODING_CYCLE_STARTED,
-        kinds::CODING_CYCLE_PLAN,
-        kinds::CODING_CYCLE_ACT,
-        kinds::CODING_CYCLE_VERIFY,
-        kinds::CODING_CYCLE_HOOK,
-        kinds::CODING_CYCLE_FINISHED,
-    ])
+    kinds::all().iter().copied().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::replay::replay_str;
+    use crate::replay::{replay_events_str_with_filter, replay_str, ReplayFilter};
 
     #[test]
     fn eval_passes_good_fixture() {
@@ -179,6 +224,28 @@ mod tests {
             .checks
             .iter()
             .any(|c| c.name == "has_task_finished" && !c.pass));
+    }
+
+    #[test]
+    fn eval_events_passes_coding_fixture_with_metrics() {
+        let fixture = include_str!("../../harnesses/rust-harness/fixtures/coding_run.jsonl");
+        let summary = replay_str(fixture).unwrap();
+        let events = replay_events_str_with_filter(fixture, &ReplayFilter::default()).unwrap();
+
+        let report = evaluate_events(&summary, &events);
+
+        assert!(report.pass);
+        let metrics = report.metrics.as_ref().expect("metrics");
+        assert_eq!(metrics.cycles_total, 1);
+        assert_eq!(metrics.cycles_succeeded, 1);
+        assert_eq!(metrics.git_commit_ok, 1);
+        assert_eq!(metrics.quality_score_100, 100);
+        assert!(report
+            .rollups
+            .as_ref()
+            .expect("rollups")
+            .by_model_executor_provider
+            .contains_key("model=gpt-5.3-codex executor=openclaw provider=http"));
     }
 
     #[test]

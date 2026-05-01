@@ -31,19 +31,48 @@ pub fn replay_file_with_filter(path: &str, filter: &ReplayFilter) -> Result<Repl
     replay_str_with_filter(&content, filter)
 }
 
+pub fn replay_events_file_with_filter(
+    path: &str,
+    filter: &ReplayFilter,
+) -> Result<Vec<HarnessEvent>> {
+    let content = fs::read_to_string(path)?;
+    replay_events_str_with_filter(&content, filter)
+}
+
 pub fn replay_str(content: &str) -> Result<ReplaySummary> {
     replay_str_with_filter(content, &ReplayFilter::default())
 }
 
 pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<ReplaySummary> {
-    if filter.latest_run && filter.run_id.is_some() {
-        return Err(anyhow!("cannot set both run_id and latest_run"));
-    }
+    let events = parse_events(content)?;
+    let (events, selected_run_id) = filter_events(events, filter)?;
+    Ok(summarize_events(&events, selected_run_id))
+}
 
+pub fn replay_events_str_with_filter(
+    content: &str,
+    filter: &ReplayFilter,
+) -> Result<Vec<HarnessEvent>> {
+    let events = parse_events(content)?;
+    let (events, _) = filter_events(events, filter)?;
+    Ok(events)
+}
+
+fn parse_events(content: &str) -> Result<Vec<HarnessEvent>> {
     let mut events = Vec::new();
     for line in content.lines().filter(|l| !l.trim().is_empty()) {
         let event: HarnessEvent = serde_json::from_str(line)?;
         events.push(event);
+    }
+    Ok(events)
+}
+
+fn filter_events(
+    events: Vec<HarnessEvent>,
+    filter: &ReplayFilter,
+) -> Result<(Vec<HarnessEvent>, Option<String>)> {
+    if filter.latest_run && filter.run_id.is_some() {
+        return Err(anyhow!("cannot set both run_id and latest_run"));
     }
 
     let selected_run_id = if let Some(run_id) = &filter.run_id {
@@ -54,6 +83,20 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
         None
     };
 
+    let filtered = events
+        .into_iter()
+        .filter(|event| {
+            selected_run_id
+                .as_ref()
+                .map(|run_id| event.run_id.as_deref() == Some(run_id.as_str()))
+                .unwrap_or(true)
+        })
+        .collect();
+
+    Ok((filtered, selected_run_id))
+}
+
+fn summarize_events(events: &[HarnessEvent], selected_run_id: Option<String>) -> ReplaySummary {
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
     let mut task_ids = BTreeSet::new();
     let mut run_ids = BTreeSet::new();
@@ -63,14 +106,9 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
     let mut previous_seq_by_run: BTreeMap<String, u64> = BTreeMap::new();
     let mut sequence_monotonic_per_run = true;
 
-    for event in events.into_iter().filter(|event| {
-        selected_run_id
-            .as_ref()
-            .map(|run_id| event.run_id.as_deref() == Some(run_id.as_str()))
-            .unwrap_or(true)
-    }) {
+    for event in events {
         *kinds.entry(event.kind.clone()).or_default() += 1;
-        if let Some(task_id) = event.task_id {
+        if let Some(task_id) = event.task_id.clone() {
             task_ids.insert(task_id);
         }
 
@@ -92,7 +130,7 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
         total_events += 1;
     }
 
-    Ok(ReplaySummary {
+    ReplaySummary {
         total_events,
         kinds,
         task_ids,
@@ -101,7 +139,7 @@ pub fn replay_str_with_filter(content: &str, filter: &ReplayFilter) -> Result<Re
         first_ts_unix: first_ts,
         last_ts_unix: last_ts,
         sequence_monotonic_per_run,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -155,6 +193,27 @@ mod tests {
         assert_eq!(summary.total_events, 1);
         assert!(summary.run_ids.contains("r1"));
         assert!(!summary.run_ids.contains("r2"));
+    }
+
+    #[test]
+    fn replay_events_filter_matches_summary_filter() {
+        let content = r#"{"kind":"run.started","ts_unix":1,"run_id":"r1","seq":1}
+{"kind":"run.finished","ts_unix":2,"run_id":"r1","seq":2}
+{"kind":"run.started","ts_unix":3,"run_id":"r2","seq":1}
+{"kind":"tool.call","ts_unix":4,"run_id":"r2","seq":2,"data":{"tool":"echo"}}
+"#;
+        let filter = ReplayFilter {
+            latest_run: true,
+            ..Default::default()
+        };
+        let events = replay_events_str_with_filter(content, &filter).unwrap();
+        let summary = replay_str_with_filter(content, &filter).unwrap();
+
+        assert_eq!(summary.selected_run_id.as_deref(), Some("r2"));
+        assert_eq!(events.len(), summary.total_events);
+        assert!(events
+            .iter()
+            .all(|event| event.run_id.as_deref() == Some("r2")));
     }
 
     #[test]

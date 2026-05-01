@@ -42,6 +42,44 @@ pub mod kinds {
     pub const CODING_HEARTBEAT: &str = "coding.heartbeat";
     pub const GIT_COMMIT: &str = "git.commit";
     pub const GIT_PUSH: &str = "git.push";
+
+    pub const fn all() -> &'static [&'static str] {
+        &[
+            RUN_STARTED,
+            RUN_FINISHED,
+            TASK_STARTED,
+            TASK_FINISHED,
+            PROVIDER_REQUEST,
+            PROVIDER_RESPONSE,
+            PROVIDER_RETRY,
+            PROVIDER_TIMEOUT,
+            PROVIDER_ERROR,
+            TOOL_CALL,
+            TOOL_OUTPUT,
+            TOOL_ERROR,
+            SCHEDULER_DISPATCH,
+            SCHEDULER_RESULT,
+            SCHEDULER_TICK,
+            CLI_RUN_SUMMARY,
+            CLI_BATCH_SUMMARY,
+            CODING_RUN_STARTED,
+            CODING_RUN_FINISHED,
+            CODING_CYCLE_STARTED,
+            CODING_CYCLE_FINISHED,
+            CODING_PHASE,
+            CODING_CYCLE_PLAN,
+            CODING_CYCLE_ACT,
+            CODING_CYCLE_VERIFY,
+            CODING_CYCLE_HOOK,
+            CODING_CONFORMANCE_SKIPPED,
+            CODING_COUNTER,
+            CODING_LOCK_ACQUIRED,
+            CODING_LOCK_EXISTS,
+            CODING_HEARTBEAT,
+            GIT_COMMIT,
+            GIT_PUSH,
+        ]
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

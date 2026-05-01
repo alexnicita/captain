@@ -1,4 +1,5 @@
 use crate::config::{OrchestratorConfig, ProviderConfig};
+use crate::error_taxonomy::{ErrorClass, ErrorClassifier};
 use crate::events::{kinds, EventSink, HarnessEvent};
 use crate::provider::{Provider, ProviderRequest, ProviderResponse};
 use crate::tools::{ToolPolicy, ToolRegistry};
@@ -91,9 +92,11 @@ impl<'a> Orchestrator<'a> {
                     self.event_sink.emit(
                         &HarnessEvent::new(kinds::TOOL_ERROR)
                             .with_task_id(task.task_id.clone())
-                            .with_data(
-                                json!({"tool": call.tool_name, "error": "max_tool_calls reached"}),
-                            ),
+                            .with_data(json!({
+                                "tool": call.tool_name,
+                                "error": "max_tool_calls reached",
+                                "error_class": ErrorClass::UnexpectedEnvironment,
+                            })),
                     )?;
                     break;
                 }
@@ -123,11 +126,17 @@ impl<'a> Orchestrator<'a> {
                         )?;
                     }
                     Err(err) => {
-                        transcript.push(format!("tool:{tool_name} error: {err}"));
+                        let error = err.to_string();
+                        let error_class = ErrorClassifier::classify_tool_error(Some(&error));
+                        transcript.push(format!("tool:{tool_name} error: {error}"));
                         self.event_sink.emit(
                             &HarnessEvent::new(kinds::TOOL_ERROR)
                                 .with_task_id(task.task_id.clone())
-                                .with_data(json!({"tool": tool_name, "error": err.to_string()})),
+                                .with_data(json!({
+                                    "tool": tool_name,
+                                    "error": error,
+                                    "error_class": error_class,
+                                })),
                         )?;
                     }
                 }
@@ -187,13 +196,16 @@ impl<'a> Orchestrator<'a> {
             match timeout(Duration::from_millis(self.provider_cfg.timeout_ms), call).await {
                 Ok(Ok(response)) => return Ok(response),
                 Ok(Err(err)) => {
+                    let error = err.to_string();
+                    let error_class = ErrorClassifier::classify_provider_error(Some(&error));
                     self.event_sink.emit(
                         &HarnessEvent::new(kinds::PROVIDER_ERROR)
                             .with_task_id(task_id.to_string())
                             .with_data(json!({
                                 "step": step,
                                 "attempt": attempt,
-                                "error": err.to_string(),
+                                "error": error,
+                                "error_class": error_class,
                             })),
                     )?;
                 }
@@ -205,6 +217,7 @@ impl<'a> Orchestrator<'a> {
                                 "step": step,
                                 "attempt": attempt,
                                 "timeout_ms": self.provider_cfg.timeout_ms,
+                                "error_class": ErrorClass::Timeout,
                             })),
                     )?;
                 }

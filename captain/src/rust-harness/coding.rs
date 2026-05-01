@@ -11,7 +11,9 @@ use crate::commit_subject_quality::{
 };
 use crate::config::ProviderConfig;
 pub use crate::duration::parse_duration_seconds;
+use crate::error_taxonomy::ErrorClassifier;
 use crate::events::{kinds, now_unix, EventSink, HarnessEvent};
+use crate::model_profile::ModelProfile;
 use crate::provider::{build_provider, Provider};
 use crate::runtime_gate::RuntimeGate;
 use anyhow::{anyhow, Context, Result};
@@ -521,6 +523,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let provider_requested_kind = built_provider.requested_kind.clone();
     let provider_resolved_kind = built_provider.resolved_kind.clone();
     let provider_fallback_reason = built_provider.fallback_reason.clone();
+    let model_profile = ModelProfile::for_model(&args.provider_cfg.model);
     let provider: Arc<dyn Provider> = Arc::from(built_provider.provider);
     let code_engine = CodeCycleEngine::new(
         Arc::new(ProviderCodePlanner::new(provider.clone())),
@@ -573,6 +576,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         "provider_requested": provider_requested_kind.clone(),
         "provider_resolved": provider_resolved_kind.clone(),
         "provider_fallback_reason": provider_fallback_reason.clone(),
+        "model": args.provider_cfg.model.clone(),
+        "model_profile": model_profile.clone(),
         "deadline_epoch": gate.deadline_epoch(),
         "prompt_provided": user_prompt.is_some(),
         "user_prompt": user_prompt.clone(),
@@ -594,6 +599,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             "provider_requested": provider_requested_kind.clone(),
             "provider_resolved": provider_resolved_kind.clone(),
             "provider_fallback_reason": provider_fallback_reason.clone(),
+            "model": args.provider_cfg.model.clone(),
+            "model_profile": model_profile.clone(),
             "deadline_epoch": gate.deadline_epoch(),
             "prompt_provided": user_prompt.is_some(),
             "user_prompt": user_prompt.clone(),
@@ -2940,18 +2947,25 @@ fn emit_git_commit_event(
     result: &str,
     detail: &str,
 ) -> Result<()> {
+    let mut data = json!({
+        "cycle": cycle,
+        "success": success,
+        "skipped": skipped,
+        "result": result,
+        "subject": subject,
+        "message": message,
+        "detail": detail,
+    });
+    if let Some(error_class) =
+        ErrorClassifier::class_for_git_event(success, skipped, result, detail)
+    {
+        data["error_class"] = json!(error_class);
+    }
+
     sink.emit(
         &HarnessEvent::new(kinds::GIT_COMMIT)
             .with_task_id(cycle_id.to_string())
-            .with_data(json!({
-                "cycle": cycle,
-                "success": success,
-                "skipped": skipped,
-                "result": result,
-                "subject": subject,
-                "message": message,
-                "detail": detail,
-            })),
+            .with_data(data),
     )
 }
 
@@ -2967,18 +2981,25 @@ fn emit_git_push_event(
     result: &str,
     detail: &str,
 ) -> Result<()> {
+    let mut data = json!({
+        "cycle": cycle,
+        "success": success,
+        "skipped": skipped,
+        "result": result,
+        "subject": subject,
+        "message": message,
+        "detail": detail,
+    });
+    if let Some(error_class) =
+        ErrorClassifier::class_for_git_event(success, skipped, result, detail)
+    {
+        data["error_class"] = json!(error_class);
+    }
+
     sink.emit(
         &HarnessEvent::new(kinds::GIT_PUSH)
             .with_task_id(cycle_id.to_string())
-            .with_data(json!({
-                "cycle": cycle,
-                "success": success,
-                "skipped": skipped,
-                "result": result,
-                "subject": subject,
-                "message": message,
-                "detail": detail,
-            })),
+            .with_data(data),
     )
 }
 

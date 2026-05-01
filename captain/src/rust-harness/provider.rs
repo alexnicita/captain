@@ -1,4 +1,5 @@
 use crate::config::ProviderConfig;
+use crate::model_profile::{ModelProfile, ProviderApi};
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -77,6 +78,7 @@ pub struct HttpProvider {
     client: reqwest::Client,
     endpoint: String,
     model: String,
+    profile: ModelProfile,
     api_key: Option<String>,
 }
 
@@ -96,17 +98,19 @@ impl HttpProvider {
             .context("failed to construct reqwest client")?;
 
         let api_key = resolve_provider_api_key(cfg);
+        let profile = ModelProfile::for_model(&cfg.model);
 
         Ok(Self {
             client,
             endpoint: endpoint_url.to_string(),
             model: cfg.model.clone(),
+            profile,
             api_key,
         })
     }
 
     fn system_instruction(&self) -> &'static str {
-        "You are a general-purpose task orchestrator. Return concise progress and optional tool usage."
+        self.profile.system_instruction()
     }
 
     fn build_user_content(&self, req: &ProviderRequest) -> String {
@@ -131,7 +135,7 @@ impl HttpProvider {
     }
 
     fn model_prefers_responses_api(&self) -> bool {
-        self.model.to_lowercase().contains("codex")
+        self.profile.provider_api == ProviderApi::Responses
     }
 
     fn uses_responses_api(&self) -> bool {

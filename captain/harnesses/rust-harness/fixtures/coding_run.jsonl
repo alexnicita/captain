@@ -1,0 +1,14 @@
+{"kind":"run.started","ts_unix":1700000100,"run_id":"run-coding-fixture","seq":1,"data":{"mode":"coding","model":"gpt-5.3-codex","executor":"openclaw","provider_resolved":"http","model_profile":{"model":"gpt-5.3-codex","family":"openai-codex","provider_api":"responses","edit_format":"unified_diff","prompt_style":"precise","supports_function_calls":true,"context_anxiety_guard":false}}}
+{"kind":"coding.run.started","ts_unix":1700000101,"run_id":"run-coding-fixture","seq":2,"data":{"model":"gpt-5.3-codex","executor":"openclaw","provider_resolved":"http"}}
+{"kind":"task.started","ts_unix":1700000102,"run_id":"run-coding-fixture","seq":3,"task_id":"cycle-1","data":{"mode":"coding","cycle":1}}
+{"kind":"coding.cycle.started","ts_unix":1700000103,"run_id":"run-coding-fixture","seq":4,"task_id":"cycle-1","data":{"cycle":1}}
+{"kind":"coding.phase","ts_unix":1700000104,"run_id":"run-coding-fixture","seq":5,"task_id":"cycle-1","data":{"cycle":1,"phase":"architecture","success":true,"result":"selected ranked task","next":"feature"}}
+{"kind":"coding.cycle.act","ts_unix":1700000105,"run_id":"run-coding-fixture","seq":6,"task_id":"cycle-1","data":{"stage":"act","success":true,"error":null,"commands":[]}}
+{"kind":"coding.cycle.verify","ts_unix":1700000106,"run_id":"run-coding-fixture","seq":7,"task_id":"cycle-1","data":{"stage":"verify","success":true,"error":null,"commands":[]}}
+{"kind":"coding.counter","ts_unix":1700000107,"run_id":"run-coding-fixture","seq":8,"task_id":"cycle-1","data":{"noop_streak":0,"forced_mutation":0,"task_advanced":1,"source_escalation":0}}
+{"kind":"git.commit","ts_unix":1700000108,"run_id":"run-coding-fixture","seq":9,"task_id":"cycle-1","data":{"cycle":1,"success":true,"skipped":false,"result":"ok","subject":"improve eval metrics","message":"feat(eval): improve eval metrics","detail":"git commit ok"}}
+{"kind":"git.push","ts_unix":1700000109,"run_id":"run-coding-fixture","seq":10,"task_id":"cycle-1","data":{"cycle":1,"success":true,"skipped":true,"result":"skipped","subject":"improve eval metrics","message":"feat(eval): improve eval metrics","detail":"push_each_cycle disabled"}}
+{"kind":"task.finished","ts_unix":1700000110,"run_id":"run-coding-fixture","seq":11,"task_id":"cycle-1","data":{"mode":"coding","cycle":1,"reason":"cycle_complete","runtime_ms":1200}}
+{"kind":"coding.cycle.finished","ts_unix":1700000111,"run_id":"run-coding-fixture","seq":12,"task_id":"cycle-1","data":{"cycle":1,"success":true,"runtime_ms":1200}}
+{"kind":"coding.run.finished","ts_unix":1700000112,"run_id":"run-coding-fixture","seq":13,"data":{"cycles_total":1,"cycles_succeeded":1,"cycles_failed":0,"elapsed_sec":12}}
+{"kind":"run.finished","ts_unix":1700000113,"run_id":"run-coding-fixture","seq":14,"data":{"mode":"coding","event_log":"fixtures/coding_run.jsonl","run_id":"run-coding-fixture","elapsed_sec":13}}
