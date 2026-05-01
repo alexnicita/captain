@@ -20,7 +20,7 @@ Options:
 
 What this initializes:
   - captain/harnesses/rust-harness/config.local.toml (from config.example.toml)
-  - captain/harnesses/rust-harness/.env.local (OPENAI_API_KEY placeholder)
+  - captain/harnesses/rust-harness/.env.local (OpenAI/OpenRouter placeholders)
   - captain/harnesses/rust-harness/prompts/session-prompt.txt
   - captain/harnesses/rust-harness/runs directory
 EOF
@@ -96,6 +96,14 @@ OPENAI_API_KEY=
 HARNESS_PROVIDER=http
 HARNESS_PROVIDER_ENDPOINT=https://api.openai.com/v1/responses
 HARNESS_MODEL=gpt-5.3-codex
+
+# OpenRouter option:
+# OPENROUTER_API_KEY=
+# CAPTAIN_OPENROUTER_MODEL=anthropic/claude-sonnet-4.6
+# HARNESS_PROVIDER=openai-compatible
+# HARNESS_PROVIDER_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
+# HARNESS_PROVIDER_API_KEY_ENV=OPENROUTER_API_KEY
+# HARNESS_MODEL=$CAPTAIN_OPENROUTER_MODEL
 EOF
   echo "Created $ENV_LOCAL"
 else

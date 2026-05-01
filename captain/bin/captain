@@ -17,6 +17,8 @@ Usage:
   captain shell <prompt> [options]
   captain cargo <prompt> [options]
   captain code --executor <executor> [--prompt <prompt>] [options]
+  captain openrouter setup [options]
+  captain setup openrouter [options]
   captain status
 
 Agent shortcuts:
@@ -26,6 +28,7 @@ Agent shortcuts:
   captain codex <prompt>       Run a governed Codex coding session
   captain shell <prompt>       Run a governed shell/local coding session
   captain cargo <prompt>       Run a governed cargo/local coding session
+  captain openrouter setup     Configure the OpenRouter model used by Captain runs
 
 Common options:
   --repo <path>                         Target repository (default: .)
@@ -50,6 +53,7 @@ Examples:
   captain claude "tighten the parser tests" --repo . --time 30m
   captain codex "refactor the flaky fixture loader" --repo . --time 30m
   captain code --executor hermes --prompt "ship useful code" --repo . --time 30m
+  captain openrouter setup --model anthropic/claude-sonnet-4.6
 
 Install for interactive use:
   export PATH="$PWD/captain/bin:$PATH"
@@ -96,6 +100,44 @@ case "${1:-}" in
   status)
     shift
     exec cargo run --manifest-path "$CAPTAIN_ROOT/captain/harnesses/rust-harness/Cargo.toml" --quiet -- status "$@"
+    ;;
+  openrouter)
+    shift
+    if [[ $# -eq 0 || "${1:-}" == --* ]]; then
+      exec bash "$CAPTAIN_ROOT/captain/scripts/setup-openrouter.sh" "$@"
+    fi
+    case "${1:-setup}" in
+      setup|model|configure)
+        [[ $# -gt 0 ]] && shift
+        exec bash "$CAPTAIN_ROOT/captain/scripts/setup-openrouter.sh" "$@"
+        ;;
+      -h|--help|help)
+        exec bash "$CAPTAIN_ROOT/captain/scripts/setup-openrouter.sh" --help
+        ;;
+      *)
+        echo "Unknown openrouter command: ${1:-}" >&2
+        echo "Try: captain openrouter setup" >&2
+        exit 64
+        ;;
+    esac
+    ;;
+  setup)
+    shift
+    case "${1:-}" in
+      openrouter)
+        shift
+        exec bash "$CAPTAIN_ROOT/captain/scripts/setup-openrouter.sh" "$@"
+        ;;
+      -h|--help|help)
+        echo "Usage: captain setup openrouter [options]" >&2
+        exit 0
+        ;;
+      *)
+        echo "Unknown setup target: ${1:-}" >&2
+        echo "Try: captain setup openrouter" >&2
+        exit 64
+        ;;
+    esac
     ;;
 esac
 

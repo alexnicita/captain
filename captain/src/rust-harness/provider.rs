@@ -134,15 +134,27 @@ impl HttpProvider {
         self.endpoint.contains("/v1/responses") || self.endpoint.ends_with("/responses")
     }
 
+    fn endpoint_is_openrouter(&self) -> bool {
+        self.endpoint.contains("openrouter.ai")
+    }
+
     fn model_prefers_responses_api(&self) -> bool {
         self.profile.provider_api == ProviderApi::Responses
     }
 
     fn uses_responses_api(&self) -> bool {
+        if self.endpoint_is_openrouter() {
+            return false;
+        }
+
         self.endpoint_explicitly_responses() || self.model_prefers_responses_api()
     }
 
     fn request_endpoint(&self) -> String {
+        if self.endpoint_is_openrouter() {
+            return self.endpoint.clone();
+        }
+
         if self.endpoint_explicitly_responses() || !self.model_prefers_responses_api() {
             return self.endpoint.clone();
         }
@@ -199,7 +211,7 @@ fn resolve_provider_api_key(cfg: &ProviderConfig) -> Option<String> {
         .map(PathBuf::from)
         .unwrap_or_else(default_openclaw_auth_profiles_path);
 
-    load_key_from_openclaw_auth_profiles(&auth_path)
+    load_key_from_openclaw_auth_profiles(&auth_path, cfg.api_key_env.as_deref())
 }
 
 fn default_openclaw_auth_profiles_path() -> PathBuf {
@@ -207,34 +219,54 @@ fn default_openclaw_auth_profiles_path() -> PathBuf {
     PathBuf::from(home).join(".openclaw/agents/main/agent/auth-profiles.json")
 }
 
-fn load_key_from_openclaw_auth_profiles(path: &PathBuf) -> Option<String> {
+fn load_key_from_openclaw_auth_profiles(
+    path: &PathBuf,
+    api_key_env: Option<&str>,
+) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
     let payload: Value = serde_json::from_str(&text).ok()?;
     let profiles = payload.pointer("/profiles")?.as_object()?;
 
-    // Prefer static OpenAI API keys when available.
-    for id in ["openai:default", "openai:manual"] {
-        if let Some(key) = profiles
-            .get(id)
-            .and_then(|profile| profile.get("key"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+    let candidate_ids: Vec<String> = match api_key_env.unwrap_or("OPENAI_API_KEY") {
+        "OPENROUTER_API_KEY" => vec![
+            "openrouter:default".to_string(),
+            "openrouter:manual".to_string(),
+        ],
+        "OPENAI_API_KEY" => vec![
+            "openai:default".to_string(),
+            "openai:manual".to_string(),
+            "openai-codex:default".to_string(),
+            "openai-codex:manual".to_string(),
+        ],
+        env_name => {
+            let lower = env_name.to_ascii_lowercase();
+            let base = lower.strip_suffix("_api_key").unwrap_or(&lower);
+            let provider = base.replace('_', "-");
+            vec![format!("{provider}:default"), format!("{provider}:manual")]
+        }
+    };
+
+    for id in candidate_ids {
+        if let Some(credential) = profiles
+            .get(&id)
+            .and_then(profile_credential_from_auth_profile)
         {
-            return Some(key.to_string());
+            return Some(credential);
         }
     }
 
-    // Fallback: OpenAI Codex OAuth access token.
-    for id in ["openai-codex:default", "openai-codex:manual"] {
-        if let Some(access) = profiles
-            .get(id)
-            .and_then(|profile| profile.get("access"))
+    None
+}
+
+fn profile_credential_from_auth_profile(profile: &Value) -> Option<String> {
+    for field in ["key", "apiKey", "api_key", "access", "token"] {
+        if let Some(value) = profile
+            .get(field)
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            return Some(access.to_string());
+            return Some(value.to_string());
         }
     }
 
@@ -480,5 +512,19 @@ mod tests {
         assert_eq!(built.resolved_kind, "http-stub");
         assert!(built.fallback_reason.is_some());
         assert_eq!(built.provider.name(), "http-stub");
+    }
+
+    #[test]
+    fn openrouter_key_can_be_loaded_from_openclaw_auth_profiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth-profiles.json");
+        fs::write(
+            &path,
+            r#"{"profiles":{"openrouter:default":{"key":"or-test-key"}}}"#,
+        )
+        .unwrap();
+
+        let key = load_key_from_openclaw_auth_profiles(&path, Some("OPENROUTER_API_KEY"));
+        assert_eq!(key.as_deref(), Some("or-test-key"));
     }
 }

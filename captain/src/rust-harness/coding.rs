@@ -319,6 +319,34 @@ impl AgentCli {
         }
     }
 
+    fn explicit_model_override(self) -> Option<String> {
+        let agent_key = match self.kind {
+            AgentCliKind::OpenClaw => "CAPTAIN_OPENCLAW_MODEL",
+            AgentCliKind::Hermes => "CAPTAIN_HERMES_MODEL",
+            AgentCliKind::Claude => "CAPTAIN_CLAUDE_MODEL",
+            AgentCliKind::Codex => "CAPTAIN_CODEX_MODEL",
+        };
+
+        env_trimmed(agent_key).or_else(|| env_trimmed("CAPTAIN_AGENT_MODEL"))
+    }
+
+    fn openclaw_model_override(self) -> Option<String> {
+        self.explicit_model_override().or_else(|| {
+            openrouter_model_raw().map(|model| openclaw_model_ref_from_openrouter_model(&model))
+        })
+    }
+
+    fn hermes_provider_override() -> Option<String> {
+        env_trimmed("CAPTAIN_HERMES_PROVIDER")
+            .or_else(|| openrouter_model_raw().map(|_| "openrouter".to_string()))
+    }
+
+    fn hermes_model_override(self) -> Option<String> {
+        self.explicit_model_override().or_else(|| {
+            openrouter_model_raw().map(|model| hermes_model_from_openrouter_model(&model))
+        })
+    }
+
     async fn run_text_once(
         self,
         repo_path: &Path,
@@ -395,7 +423,11 @@ impl AgentCli {
                     .arg("agent")
                     .arg("--local")
                     .arg("--agent")
-                    .arg("main")
+                    .arg("main");
+                if let Some(model) = self.openclaw_model_override() {
+                    command.arg("--model").arg(model);
+                }
+                command
                     .arg("--session-id")
                     .arg(session_id)
                     .arg("--timeout")
@@ -426,7 +458,14 @@ impl AgentCli {
                     .arg("--max-turns")
                     .arg("90")
                     .arg("--toolsets")
-                    .arg(toolsets)
+                    .arg(toolsets);
+                if let Some(provider) = Self::hermes_provider_override() {
+                    command.arg("--provider").arg(provider);
+                }
+                if let Some(model) = self.hermes_model_override() {
+                    command.arg("--model").arg(model);
+                }
+                command
                     .arg("--pass-session-id")
                     .arg("--yolo")
                     .arg("-q")
@@ -454,7 +493,7 @@ impl AgentCli {
                 if !tools.is_empty() {
                     command.arg("--tools").arg(tools);
                 }
-                if let Some(model) = env_trimmed("CAPTAIN_CLAUDE_MODEL") {
+                if let Some(model) = self.explicit_model_override() {
                     command.arg("--model").arg(model);
                 }
                 command.arg(prompt);
@@ -469,7 +508,7 @@ impl AgentCli {
                 let approval_policy = env_trimmed_or("CAPTAIN_CODEX_APPROVAL_POLICY", "never");
 
                 let mut command = Command::new("codex");
-                if let Some(model) = env_trimmed("CAPTAIN_CODEX_MODEL") {
+                if let Some(model) = self.explicit_model_override() {
                     command.arg("--model").arg(model);
                 }
                 if let Some(profile) = env_trimmed("CAPTAIN_CODEX_PROFILE") {
@@ -2117,6 +2156,37 @@ fn env_trimmed(name: &str) -> Option<String> {
 
 fn env_trimmed_or(name: &str, default: &str) -> String {
     env_trimmed(name).unwrap_or_else(|| default.to_string())
+}
+
+fn openrouter_model_raw() -> Option<String> {
+    env_trimmed("CAPTAIN_OPENROUTER_MODEL").or_else(|| {
+        let endpoint = env_trimmed("HARNESS_PROVIDER_ENDPOINT")?;
+        if endpoint.contains("openrouter.ai") {
+            env_trimmed("HARNESS_MODEL")
+        } else {
+            None
+        }
+    })
+}
+
+fn openclaw_model_ref_from_openrouter_model(model: &str) -> String {
+    let trimmed = model.trim();
+    if trimmed.starts_with("openrouter/") {
+        return trimmed.to_string();
+    }
+
+    format!("openrouter/{trimmed}")
+}
+
+fn hermes_model_from_openrouter_model(model: &str) -> String {
+    let trimmed = model.trim();
+    if let Some(rest) = trimmed.strip_prefix("openrouter/") {
+        if rest.contains('/') {
+            return rest.to_string();
+        }
+    }
+
+    trimmed.to_string()
 }
 
 fn agent_payload_file(repo_path: &Path, agent_name: &str, session_id: &str) -> Result<PathBuf> {
@@ -4160,6 +4230,26 @@ mod tests {
         );
 
         assert!(AgentCli::for_preset(ExecutorPreset::Cargo).is_none());
+    }
+
+    #[test]
+    fn openrouter_model_refs_are_normalized_for_agent_clis() {
+        assert_eq!(
+            openclaw_model_ref_from_openrouter_model("anthropic/claude-sonnet-4.6"),
+            "openrouter/anthropic/claude-sonnet-4.6"
+        );
+        assert_eq!(
+            openclaw_model_ref_from_openrouter_model("openrouter/auto"),
+            "openrouter/auto"
+        );
+        assert_eq!(
+            hermes_model_from_openrouter_model("openrouter/anthropic/claude-sonnet-4.6"),
+            "anthropic/claude-sonnet-4.6"
+        );
+        assert_eq!(
+            hermes_model_from_openrouter_model("openrouter/auto"),
+            "openrouter/auto"
+        );
     }
 
     #[tokio::test]

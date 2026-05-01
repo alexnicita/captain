@@ -50,6 +50,9 @@ Optional:
 Environment:
   CAPTAIN_CLEANUP_AUTO=1              Run guarded storage cleanup before harness start
   CAPTAIN_CLEANUP_MIN_FREE_GB=N       Free-space threshold for automatic cleanup
+  CAPTAIN_OPENROUTER_MODEL=<id>       Route provider + supported agent CLIs through OpenRouter
+  OPENROUTER_API_KEY=<key>            OpenRouter API key for OpenRouter-routed runs
+  CAPTAIN_OPENROUTER_ENV=<path>       OpenRouter env file (default: repo .env.openrouter)
   CAPTAIN_CLAUDE_TOOLS=Read,Grep,...  Claude Code tool allowlist (default: Read,Grep,Glob,LS)
   CAPTAIN_CODEX_SANDBOX=read-only     Codex sandbox mode for JSON-edit generation
 
@@ -115,23 +118,80 @@ if [[ -n "$PROMPT" && -n "$PROMPT_FILE" ]]; then
   exit 3
 fi
 
+source_env_file_if_present() {
+  local env_file="$1"
+  if [[ -f "$env_file" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "$env_file"
+    set +a
+  fi
+}
+
+CAPTAIN_REPO_ROOT="$(cd "$ROOT_DIR/../../.." && pwd)"
+CAPTAIN_OPENROUTER_ENV_PATH="${CAPTAIN_OPENROUTER_ENV:-$CAPTAIN_REPO_ROOT/.env.openrouter}"
+source_env_file_if_present "$CAPTAIN_OPENROUTER_ENV_PATH"
+
 # Provider bootstrap so "run as-is" works with OpenClaw auth profiles.
 # Priority:
 #   1) explicit env overrides already set by operator
-#   2) sane OpenAI defaults
-#   3) OPENAI_API_KEY loaded from OpenClaw auth profile store when available
-export HARNESS_PROVIDER="${HARNESS_PROVIDER:-http}"
-export HARNESS_PROVIDER_ENDPOINT="${HARNESS_PROVIDER_ENDPOINT:-https://api.openai.com/v1/responses}"
-export HARNESS_MODEL="${HARNESS_MODEL:-gpt-5.3-codex}"
+#   2) installer-written OpenRouter defaults or explicit OpenRouter env
+#   3) sane OpenAI defaults
+#   4) provider credential loaded from OpenClaw auth profile store when available
+OPENROUTER_REQUESTED=0
+DEFAULT_OPENAI_PROVIDER="http"
+DEFAULT_OPENAI_ENDPOINT="https://api.openai.com/v1/responses"
+DEFAULT_OPENAI_MODEL="gpt-5.3-codex"
+case "${CAPTAIN_PROVIDER:-}" in
+  openrouter|OpenRouter) OPENROUTER_REQUESTED=1 ;;
+esac
+if [[ -n "${CAPTAIN_OPENROUTER_MODEL:-}" || "${HARNESS_PROVIDER_ENDPOINT:-}" == *openrouter.ai* ]]; then
+  OPENROUTER_REQUESTED=1
+fi
 
-if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+if [[ "$OPENROUTER_REQUESTED" == "1" ]]; then
+  if [[ -z "${CAPTAIN_OPENROUTER_MODEL:-}" ]]; then
+    if [[ -n "${HARNESS_MODEL:-}" && "$HARNESS_MODEL" != "$DEFAULT_OPENAI_MODEL" ]]; then
+      export CAPTAIN_OPENROUTER_MODEL="$HARNESS_MODEL"
+    else
+      export CAPTAIN_OPENROUTER_MODEL="openrouter/auto"
+    fi
+  fi
+  if [[ -z "${HARNESS_PROVIDER:-}" || "$HARNESS_PROVIDER" == "$DEFAULT_OPENAI_PROVIDER" ]]; then
+    export HARNESS_PROVIDER="openai-compatible"
+  fi
+  if [[ -z "${HARNESS_PROVIDER_ENDPOINT:-}" || "$HARNESS_PROVIDER_ENDPOINT" == "$DEFAULT_OPENAI_ENDPOINT" ]]; then
+    export HARNESS_PROVIDER_ENDPOINT="https://openrouter.ai/api/v1/chat/completions"
+  fi
+  if [[ -z "${HARNESS_PROVIDER_API_KEY_ENV:-}" || "$HARNESS_PROVIDER_API_KEY_ENV" == "OPENAI_API_KEY" ]]; then
+    export HARNESS_PROVIDER_API_KEY_ENV="OPENROUTER_API_KEY"
+  fi
+  if [[ -z "${HARNESS_MODEL:-}" || "$HARNESS_MODEL" == "$DEFAULT_OPENAI_MODEL" ]]; then
+    export HARNESS_MODEL="$CAPTAIN_OPENROUTER_MODEL"
+  fi
+else
+  export HARNESS_PROVIDER="${HARNESS_PROVIDER:-$DEFAULT_OPENAI_PROVIDER}"
+  export HARNESS_PROVIDER_ENDPOINT="${HARNESS_PROVIDER_ENDPOINT:-$DEFAULT_OPENAI_ENDPOINT}"
+  export HARNESS_PROVIDER_API_KEY_ENV="${HARNESS_PROVIDER_API_KEY_ENV:-OPENAI_API_KEY}"
+  export HARNESS_MODEL="${HARNESS_MODEL:-$DEFAULT_OPENAI_MODEL}"
+fi
+
+PROVIDER_KEY_ENV="${HARNESS_PROVIDER_API_KEY_ENV:-OPENAI_API_KEY}"
+
+provider_key_value() {
+  local env_name="$1"
+  printf '%s' "${!env_name:-}"
+}
+
+if [[ -z "$(provider_key_value "$PROVIDER_KEY_ENV")" ]]; then
   AUTH_PROFILES_PATH="${OPENCLAW_AUTH_PROFILES:-$HOME/.openclaw/agents/main/agent/auth-profiles.json}"
   if [[ -f "$AUTH_PROFILES_PATH" ]]; then
-    PROFILE_CRED="$(python3 - "$AUTH_PROFILES_PATH" <<'PY'
+    PROFILE_CRED="$(python3 - "$AUTH_PROFILES_PATH" "$PROVIDER_KEY_ENV" <<'PY'
 import json
 import sys
 
 path = sys.argv[1]
+key_env = sys.argv[2]
 
 try:
     with open(path, "r", encoding="utf-8") as f:
@@ -142,25 +202,42 @@ except Exception:
 
 profiles = (data.get("profiles") or {})
 
-for pid in ("openai:default", "openai:manual"):
-    key = ((profiles.get(pid) or {}).get("key") or "").strip()
-    if key:
-        print(key, end="")
-        raise SystemExit(0)
+def profile_credential(profile):
+    for field in ("key", "apiKey", "api_key", "access", "token"):
+        value = ((profile or {}).get(field) or "").strip()
+        if value:
+            return value
+    return ""
 
-# Fallback: some setups only have openai-codex OAuth access token.
-for pid in ("openai-codex:default", "openai-codex:manual"):
-    access = ((profiles.get(pid) or {}).get("access") or "").strip()
-    if access:
-        print(access, end="")
+if key_env == "OPENAI_API_KEY":
+    candidates = (
+        "openai:default",
+        "openai:manual",
+        # Fallback: some setups only have openai-codex OAuth access token.
+        "openai-codex:default",
+        "openai-codex:manual",
+    )
+elif key_env == "OPENROUTER_API_KEY":
+    candidates = ("openrouter:default", "openrouter:manual")
+else:
+    provider = key_env.lower()
+    if provider.endswith("_api_key"):
+        provider = provider[:-8]
+    provider = provider.replace("_", "-")
+    candidates = (f"{provider}:default", f"{provider}:manual")
+
+for pid in candidates:
+    credential = profile_credential(profiles.get(pid) or {})
+    if credential:
+        print(credential, end="")
         raise SystemExit(0)
 
 print("", end="")
 PY
 )"
     if [[ -n "$PROFILE_CRED" ]]; then
-      export OPENAI_API_KEY="$PROFILE_CRED"
-      echo "[harness] loaded provider credential from OpenClaw auth profiles."
+      export "$PROVIDER_KEY_ENV=$PROFILE_CRED"
+      echo "[harness] loaded $PROVIDER_KEY_ENV from OpenClaw auth profiles."
     fi
     unset PROFILE_CRED
   fi
@@ -173,12 +250,16 @@ executor_uses_own_auth() {
   esac
 }
 
-if [[ -z "${OPENAI_API_KEY:-}" ]] && ! executor_uses_own_auth; then
-  echo "[harness] error: OPENAI_API_KEY is unset and no OpenClaw auth profile credential was found." >&2
-  echo "[harness] hint: run 'openclaw models status --json' to verify configured auth profiles." >&2
+if [[ -z "$(provider_key_value "$PROVIDER_KEY_ENV")" ]] && ! executor_uses_own_auth; then
+  echo "[harness] error: $PROVIDER_KEY_ENV is unset and no OpenClaw auth profile credential was found." >&2
+  if [[ "$PROVIDER_KEY_ENV" == "OPENROUTER_API_KEY" ]]; then
+    echo "[harness] hint: set OPENROUTER_API_KEY or run 'openclaw models auth login --provider openrouter'." >&2
+  else
+    echo "[harness] hint: run 'openclaw models status --json' to verify configured auth profiles." >&2
+  fi
   exit 4
-elif [[ -z "${OPENAI_API_KEY:-}" ]] && executor_uses_own_auth; then
-  echo "[harness] OPENAI_API_KEY is unset; $EXECUTOR executor will use its own auth/config."
+elif [[ -z "$(provider_key_value "$PROVIDER_KEY_ENV")" ]] && executor_uses_own_auth; then
+  echo "[harness] $PROVIDER_KEY_ENV is unset; $EXECUTOR executor will use its own auth/config."
 fi
 
 "$ROOT_DIR/scripts/check_toolchain.sh"

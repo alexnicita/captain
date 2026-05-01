@@ -32,6 +32,7 @@ cargo run -- --config ./config.local.toml code --repo /path/to/repo --time 1h
 Coding mode expects a provider capable of unified diff generation.
 For real code output, use `provider.kind = "http"` (or `HARNESS_PROVIDER=http`) with a reachable endpoint/model.
 Default target is Codex 5.3 via Responses API (`https://api.openai.com/v1/responses`, model `gpt-5.3-codex`).
+For OpenRouter, run `captain openrouter setup` after install, or pass `--setup-openrouter --openrouter-model <model>` to the installer. Captain will use `https://openrouter.ai/api/v1/chat/completions` and forward the selected model to OpenClaw/Hermes agent runs when those CLIs support it.
 
 ## 4b) Supercycle run (architecture remap + task graph artifacts)
 
@@ -81,7 +82,7 @@ Coding mode guarantees the phase order each cycle:
 
 If the repo is clean at architecture phase, the harness selects the next feature task from internal docs (`ARCHITECTURE.md`, `README.md`, `RUNBOOK.md`, `MIGRATION.md`) before running feature work.
 
-Agent CLI executors (`openclaw`, `hermes`, `claude`, `codex`) use the same JSON-edit harness path. OpenClaw is invoked through `openclaw agent`; Hermes is invoked through `hermes chat --quiet -q ...` and uses `CAPTAIN_HERMES_TOOLSETS`; Claude Code is invoked through `claude --print` and uses `CAPTAIN_CLAUDE_TOOLS`; Codex is invoked through `codex exec` and uses `CAPTAIN_CODEX_SANDBOX`.
+Agent CLI executors (`openclaw`, `hermes`, `claude`, `codex`) use the same JSON-edit harness path. OpenClaw is invoked through `openclaw agent`; Hermes is invoked through `hermes chat --quiet -q ...` and uses `CAPTAIN_HERMES_TOOLSETS`; Claude Code is invoked through `claude --print` and uses `CAPTAIN_CLAUDE_TOOLS`; Codex is invoked through `codex exec` and uses `CAPTAIN_CODEX_SANDBOX`. `CAPTAIN_OPENROUTER_MODEL` maps to `openclaw agent --model openrouter/<model>` and `hermes chat --provider openrouter --model <model>`; set the agent-specific model env vars for Claude Code or Codex.
 
 Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_resolution`, `commit`, `push`) so operators can see clean merges vs conflicts and unresolved/conflict-resolution status.
 

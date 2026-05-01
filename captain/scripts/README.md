@@ -5,6 +5,7 @@ Workspace bootstrap and maintenance scripts.
 Key scripts:
 - `bin/captain` (operator CLI: `captain hermes "prompt" --repo . --time 1h`)
 - `setup-openclaw-captain.sh`
+- `setup-openrouter.sh` (post-install OpenRouter model setup: `captain openrouter setup`)
 - `captain-doctor.sh`
 - `setup-harness-env.sh`
 - `init-local-profile.sh`

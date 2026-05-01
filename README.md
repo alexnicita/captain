@@ -68,6 +68,23 @@ captain code --executor codex --prompt "simplify this module" --repo . --time 30
 
 Pushes are opt-in. `--commit-each-cycle` can create local commits; add `--push-each-cycle` only when you intentionally want Captain to push after successful committed cycles.
 
+To route governed runs through OpenRouter, use the post-install setup command. This follows the same shape as agent setup commands such as `hermes setup` / `hermes model` and `openclaw onboard` / `openclaw models set`:
+
+```bash
+captain openrouter setup
+```
+
+You can also run it as part of the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alexnicita/captain/main/install.sh | \
+  bash -s -- --setup-openrouter --openrouter-model anthropic/claude-sonnet-4.6
+```
+
+The setup command writes `~/.captain/.env.openrouter`, which the harness sources automatically. OpenRouter model selection is forwarded to supported agent CLIs where possible: OpenClaw runs receive `--model openrouter/<model>`, and Hermes runs receive `--provider openrouter --model <model>`. Claude Code and Codex keep their native model configuration unless you set `CAPTAIN_CLAUDE_MODEL`, `CAPTAIN_CODEX_MODEL`, or `CAPTAIN_AGENT_MODEL` explicitly.
+
+See `docs/captain/openrouter.md` for the full setup notes, including non-interactive install and env-file behavior.
+
 These shortcuts route through the stable harness interface:
 
 ```bash
@@ -115,7 +132,7 @@ OpenClaw, Hermes, Claude Code, Codex, and similar agents make it easy to give a 
 - Node.js 24 recommended, Node.js 22.14+ minimum.
 - Rust 1.76+ for `captain/harnesses/rust-harness`.
 - OpenClaw CLI for `--executor openclaw`, Hermes CLI for `--executor hermes`, Claude Code CLI for `--executor claude`, or Codex CLI for `--executor codex`.
-- A model credential via `OPENAI_API_KEY` / OpenClaw auth profiles, or the selected agent CLI's own auth/config for Hermes, Claude Code, and Codex runs.
+- A model credential via `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, OpenClaw auth profiles, or the selected agent CLI's own auth/config for Hermes, Claude Code, and Codex runs.
 
 ## Verification
 

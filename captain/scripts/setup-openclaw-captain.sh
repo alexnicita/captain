@@ -9,6 +9,8 @@ OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
 SKIP_OPENCLAW_INSTALL="${SKIP_OPENCLAW_INSTALL:-0}"
 INIT_HARNESS="${INIT_HARNESS:-1}"
 UPDATE_OPENCLAW_WORKSPACE="${UPDATE_OPENCLAW_WORKSPACE:-1}"
+OPENROUTER_MODEL="${CAPTAIN_OPENROUTER_MODEL:-}"
+UPDATE_OPENCLAW_MODEL="${UPDATE_OPENCLAW_MODEL:-1}"
 
 usage() {
   cat <<'EOF'
@@ -24,11 +26,14 @@ Options:
   --skip-openclaw-install  Don't install OpenClaw if missing
   --no-init-harness        Skip harness local init
   --no-config-update       Do not run 'openclaw config set' for workspace
+  --openrouter-model <id>  Set OpenClaw's primary model to an OpenRouter model
+  --no-model-update        Do not run 'openclaw models set' for OpenRouter
   -h, --help               Show help
 
 Environment variables supported:
   REPO_URL, INSTALL_DIR, TARGET_DIR, REPO_NAME, OPENCLAW_CONFIG,
-  SKIP_OPENCLAW_INSTALL, INIT_HARNESS, UPDATE_OPENCLAW_WORKSPACE
+  SKIP_OPENCLAW_INSTALL, INIT_HARNESS, UPDATE_OPENCLAW_WORKSPACE,
+  CAPTAIN_OPENROUTER_MODEL, UPDATE_OPENCLAW_MODEL
 EOF
 }
 
@@ -50,6 +55,10 @@ while [[ $# -gt 0 ]]; do
       INIT_HARNESS=0; shift ;;
     --no-config-update)
       UPDATE_OPENCLAW_WORKSPACE=0; shift ;;
+    --openrouter-model)
+      OPENROUTER_MODEL="$2"; shift 2 ;;
+    --no-model-update)
+      UPDATE_OPENCLAW_MODEL=0; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -128,6 +137,15 @@ fi
 if [[ "$INIT_HARNESS" == "1" ]]; then
   echo "[5c/6] Initializing harness local files..."
   bash "$TARGET_DIR/captain/scripts/setup-harness-env.sh" || true
+fi
+
+if [[ -n "$OPENROUTER_MODEL" ]]; then
+  echo "[5d/6] Configuring Captain OpenRouter defaults..."
+  OPENROUTER_ARGS=(--non-interactive --model "$OPENROUTER_MODEL")
+  if [[ "$UPDATE_OPENCLAW_MODEL" != "1" ]]; then
+    OPENROUTER_ARGS+=(--no-openclaw-model)
+  fi
+  bash "$TARGET_DIR/captain/scripts/setup-openrouter.sh" "${OPENROUTER_ARGS[@]}"
 fi
 
 cat <<EOF

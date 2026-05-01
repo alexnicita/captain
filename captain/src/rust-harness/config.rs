@@ -102,6 +102,12 @@ impl AppConfig {
         if let Ok(endpoint) = std::env::var("HARNESS_PROVIDER_ENDPOINT") {
             cfg.provider.endpoint = Some(endpoint);
         }
+        if let Ok(api_key_env) = std::env::var("HARNESS_PROVIDER_API_KEY_ENV") {
+            let api_key_env = api_key_env.trim();
+            if !api_key_env.is_empty() {
+                cfg.provider.api_key_env = Some(api_key_env.to_string());
+            }
+        }
         if let Ok(timeout_ms) = std::env::var("HARNESS_PROVIDER_TIMEOUT_MS") {
             if let Ok(parsed) = timeout_ms.parse::<u64>() {
                 cfg.provider.timeout_ms = parsed;

@@ -18,7 +18,7 @@ Checks:
   - Node.js 24 recommended / 22.14+ minimum
   - Rust toolchain readiness
   - agent CLI presence (OpenClaw, Hermes, Claude Code, or Codex)
-  - provider or agent credential availability
+  - provider or agent credential availability, including OpenRouter
   - writable workspace and private zone
   - risky OpenClaw config hints
 EOF
@@ -98,12 +98,18 @@ fi
 
 if [[ -n "${OPENAI_API_KEY:-}" ]]; then
   ok "OPENAI_API_KEY is set"
+elif [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
+  ok "OPENROUTER_API_KEY is set"
 elif [[ -f "$AUTH_PROFILES" ]]; then
   ok "OpenClaw auth profiles found at $AUTH_PROFILES"
 elif [[ "$agent_own_auth_count" -gt 0 ]]; then
-  warn "no OPENAI_API_KEY and no OpenClaw auth profile store found; Hermes/Claude/Codex executors may still use their own auth/config"
+  warn "no OPENAI_API_KEY, OPENROUTER_API_KEY, or OpenClaw auth profile store found; Hermes/Claude/Codex executors may still use their own auth/config"
 else
-  fail "no OPENAI_API_KEY, no OpenClaw auth profile store, and no agent-local auth executor found"
+  fail "no OPENAI_API_KEY, no OPENROUTER_API_KEY, no OpenClaw auth profile store, and no agent-local auth executor found"
+fi
+
+if [[ -n "${CAPTAIN_OPENROUTER_MODEL:-}" ]]; then
+  ok "Captain OpenRouter model set: $CAPTAIN_OPENROUTER_MODEL"
 fi
 
 if [[ -d "$OPENCLAW_WORKSPACE" && -w "$OPENCLAW_WORKSPACE" ]]; then

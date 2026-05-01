@@ -9,6 +9,7 @@ scripts=(
   "captain/bin/captain"
   "captain/scripts/heartbeat_checkin.sh"
   "captain/scripts/setup-openclaw-captain.sh"
+  "captain/scripts/setup-openrouter.sh"
   "captain/scripts/captain-doctor.sh"
   "captain/scripts/setup-harness-env.sh"
   "captain/scripts/init-local-profile.sh"
@@ -28,9 +29,22 @@ for s in "${scripts[@]}"; do
 done
 
 bash captain/scripts/setup-openclaw-captain.sh --help >/dev/null
+bash captain/scripts/setup-openrouter.sh --help >/dev/null
 bash captain/scripts/captain-doctor.sh --help >/dev/null
 bash captain/scripts/setup-harness-env.sh --help >/dev/null
 bash captain/scripts/storage_guard.sh --help >/dev/null
+bash install.sh --help | grep -q -- '--openrouter-model' || {
+  echo "install help must document OpenRouter setup" >&2
+  exit 1
+}
+bash captain/scripts/setup-openclaw-captain.sh --help | grep -q -- '--openrouter-model' || {
+  echo "OpenClaw setup help must document OpenRouter model setup" >&2
+  exit 1
+}
+bash captain/harnesses/rust-harness/scripts/harness.sh --help | grep -q 'CAPTAIN_OPENROUTER_MODEL' || {
+  echo "harness help must document OpenRouter env support" >&2
+  exit 1
+}
 bash captain/scripts/init-local-profile.sh >/dev/null || true
 bash captain/bin/captain --help | grep -q "captain hermes <prompt>" || {
   echo "captain CLI help must document the Hermes shortcut" >&2
@@ -42,6 +56,15 @@ bash captain/bin/captain --help | grep -q "captain claude <prompt>" || {
 }
 bash captain/bin/captain --help | grep -q "captain codex <prompt>" || {
   echo "captain CLI help must document the Codex shortcut" >&2
+  exit 1
+}
+bash captain/bin/captain --help | grep -q "captain openrouter setup" || {
+  echo "captain CLI help must document OpenRouter setup" >&2
+  exit 1
+}
+openrouter_help="$(bash captain/bin/captain openrouter --help)"
+grep -q -- '--model <id>' <<<"$openrouter_help" || {
+  echo "captain openrouter help must route to setup help" >&2
   exit 1
 }
 cli_dry_run="$(bash captain/bin/captain hermes "ship useful code" --repo /tmp/example-repo --time 45m --runtime-log-file /tmp/captain.log --commit-each-cycle --dry-run)"
@@ -86,8 +109,20 @@ trap 'rm -f "$heartbeat_state"' EXIT
 HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.sh --status >/dev/null
 HEARTBEAT_STATE_FILE="$heartbeat_state" bash captain/scripts/heartbeat_checkin.sh --check workspace >/dev/null
 
+openrouter_root="$(mktemp -d "${TMPDIR:-/tmp}/captain-openrouter.XXXXXX")"
+trap 'rm -f "$heartbeat_state"; rm -rf "$openrouter_root"' EXIT
+CAPTAIN_OPENROUTER_ENV="$openrouter_root/.env.openrouter" bash captain/scripts/setup-openrouter.sh --non-interactive --model anthropic/claude-sonnet-4.6 --no-openclaw-model >/dev/null
+grep -q 'CAPTAIN_OPENROUTER_MODEL=anthropic/claude-sonnet-4.6' "$openrouter_root/.env.openrouter" || {
+  echo "OpenRouter setup must write the selected model" >&2
+  exit 1
+}
+grep -q 'HARNESS_PROVIDER_API_KEY_ENV=OPENROUTER_API_KEY' "$openrouter_root/.env.openrouter" || {
+  echo "OpenRouter setup must point provider auth at OPENROUTER_API_KEY" >&2
+  exit 1
+}
+
 cleanup_root="$(mktemp -d "${TMPDIR:-/tmp}/captain-storage-guard.XXXXXX")"
-trap 'rm -f "$heartbeat_state"; rm -rf "$cleanup_root"' EXIT
+trap 'rm -f "$heartbeat_state"; rm -rf "$openrouter_root" "$cleanup_root"' EXIT
 mkdir -p "$cleanup_root/workspace/tmp/old" "$cleanup_root/workspace/tmp_research/old" "$cleanup_root/openclaw" "$cleanup_root/hermes" "$cleanup_root/claude" "$cleanup_root/codex"
 touch "$cleanup_root/workspace/tmp/old/file" "$cleanup_root/workspace/tmp_research/old/file" "$cleanup_root/openclaw/keep" "$cleanup_root/hermes/keep" "$cleanup_root/claude/keep" "$cleanup_root/codex/keep"
 cleanup_output="$(OPENCLAW_HOME="$cleanup_root/openclaw" HERMES_HOME="$cleanup_root/hermes" CLAUDE_HOME="$cleanup_root/claude" CODEX_HOME="$cleanup_root/codex" OPENCLAW_WORKSPACE="$cleanup_root/workspace" CAPTAIN_CLEANUP_DRY_RUN=1 bash captain/scripts/storage_guard.sh --auto --min-free-gb 9999)"
