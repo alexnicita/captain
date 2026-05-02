@@ -146,7 +146,7 @@ Default "run as-is" settings target Codex 5.3 via OpenAI Responses API:
 
 If you want the coding step to call an installed agent CLI itself, use `--executor openclaw`, `--executor hermes`, `--executor claude`, or `--executor codex`.
 All agent modes share the same agent-runner abstraction: the feature stage sends selected task + repo snapshot to the agent CLI and enforces a strict JSON edit contract (`rationale`, `acceptance_checks`, `edits`) with adaptive retries before applying edits through the harness.
-OpenClaw uses `openclaw agent --local --agent main --json`; Hermes uses `hermes chat --quiet -q ...` with `terminal,skills` toolsets by default; Claude Code uses `claude --print`; Codex uses `codex exec`. Override Hermes toolsets with `CAPTAIN_HERMES_TOOLSETS`, Claude Code tools with `CAPTAIN_CLAUDE_TOOLS`, and Codex sandboxing with `CAPTAIN_CODEX_SANDBOX`.
+OpenClaw uses `openclaw agent --local --agent main --json`; Hermes uses `hermes chat --quiet -q ...` with `terminal,skills` toolsets by default; Claude Code uses `claude --print`; Codex uses `codex exec`. Override Hermes toolsets with `CAPTAIN_HERMES_TOOLSETS`, Claude Code tools with `CAPTAIN_CLAUDE_TOOLS`, Codex sandboxing with `CAPTAIN_CODEX_SANDBOX`, and Codex long-running `/goal` mode with `CAPTAIN_CODEX_MODE=goal`.
 
 ## Dogfood workflow (harness-on-harness)
 

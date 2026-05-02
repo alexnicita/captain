@@ -506,8 +506,19 @@ impl AgentCli {
                 let payload_file = agent_payload_file(repo_path, self.name(), session_id)?;
                 let sandbox = env_trimmed_or("CAPTAIN_CODEX_SANDBOX", "read-only");
                 let approval_policy = env_trimmed_or("CAPTAIN_CODEX_APPROVAL_POLICY", "never");
+                let codex_mode = env_trimmed("CAPTAIN_CODEX_MODE").unwrap_or_default();
+                let goal_mode = codex_mode.eq_ignore_ascii_case("goal");
+
+                let prompt = if goal_mode && !prompt.starts_with("/goal") {
+                    format!("/goal {prompt}")
+                } else {
+                    prompt.to_string()
+                };
 
                 let mut command = Command::new("codex");
+                if goal_mode {
+                    command.arg("-c").arg("features.goals=true");
+                }
                 if let Some(model) = self.explicit_model_override() {
                     command.arg("--model").arg(model);
                 }

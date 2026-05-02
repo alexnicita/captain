@@ -82,7 +82,7 @@ Coding mode guarantees the phase order each cycle:
 
 If the repo is clean at architecture phase, the harness selects the next feature task from internal docs (`ARCHITECTURE.md`, `README.md`, `RUNBOOK.md`, `MIGRATION.md`) before running feature work.
 
-Agent CLI executors (`openclaw`, `hermes`, `claude`, `codex`) use the same JSON-edit harness path. OpenClaw is invoked through `openclaw agent`; Hermes is invoked through `hermes chat --quiet -q ...` and uses `CAPTAIN_HERMES_TOOLSETS`; Claude Code is invoked through `claude --print` and uses `CAPTAIN_CLAUDE_TOOLS`; Codex is invoked through `codex exec` and uses `CAPTAIN_CODEX_SANDBOX`. `CAPTAIN_OPENROUTER_MODEL` maps to `openclaw agent --model openrouter/<model>` and `hermes chat --provider openrouter --model <model>`; set the agent-specific model env vars for Claude Code or Codex.
+Agent CLI executors (`openclaw`, `hermes`, `claude`, `codex`) use the same JSON-edit harness path. OpenClaw is invoked through `openclaw agent`; Hermes is invoked through `hermes chat --quiet -q ...` and uses `CAPTAIN_HERMES_TOOLSETS`; Claude Code is invoked through `claude --print` and uses `CAPTAIN_CLAUDE_TOOLS`; Codex is invoked through `codex exec` and uses `CAPTAIN_CODEX_SANDBOX` (and `CAPTAIN_CODEX_MODE=goal` for Codex `/goal` runs). `CAPTAIN_OPENROUTER_MODEL` maps to `openclaw agent --model openrouter/<model>` and `hermes chat --provider openrouter --model <model>`; set the agent-specific model env vars for Claude Code or Codex.
 
 Cleanup always emits explicit git sync outcomes (`fetch`, `pull`, `conflict_resolution`, `commit`, `push`) so operators can see clean merges vs conflicts and unresolved/conflict-resolution status.
 

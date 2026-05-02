@@ -54,6 +54,7 @@ Environment:
   OPENROUTER_API_KEY=<key>            OpenRouter API key for OpenRouter-routed runs
   CAPTAIN_OPENROUTER_ENV=<path>       OpenRouter env file (default: repo .env.openrouter)
   CAPTAIN_CLAUDE_TOOLS=Read,Grep,...  Claude Code tool allowlist (default: Read,Grep,Glob,LS)
+  CAPTAIN_CODEX_MODE=goal             Enable Codex /goal long-running mode
   CAPTAIN_CODEX_SANDBOX=read-only     Codex sandbox mode for JSON-edit generation
 
 Examples:
