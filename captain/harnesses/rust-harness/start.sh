@@ -7,6 +7,11 @@ cd "$ROOT_DIR"
 DURATION="${1:-1h}"
 PROMPT="${HARNESS_PROMPT:-Implement concrete Rust code changes in src/ with tests; avoid docs-only edits. Keep commits specific and useful.}"
 RECOVER_DIRTY="${HARNESS_RECOVER_DIRTY:-0}"
+# Ensure RECOVER_DIRTY is either 0 or 1; otherwise default to 0
+if [[ "$RECOVER_DIRTY" != "0" && "$RECOVER_DIRTY" != "1" ]]; then
+  echo "[start] Warning: HARNESS_RECOVER_DIRTY must be 0 or 1; defaulting to 0" >&2
+  RECOVER_DIRTY=0
+fi
 
 cleanup_runtime_artifacts() {
   rm -f .git/.agent-harness-code.lock
