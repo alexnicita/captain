@@ -1,5 +1,7 @@
 # Captain
 
+*Automated maintenance update*
+
 Captain turns autonomous coding agents into governed coding runs.
 
 It is a local-first harness for OpenClaw, Hermes, Claude Code, Codex, and other tool-using coding agents that need more than a prompt: runtime budgets, command policy, phase logs, replayable JSONL events, commit discipline, and operator-visible release gates.
