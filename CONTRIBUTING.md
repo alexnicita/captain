@@ -29,3 +29,4 @@ cargo clippy --all-targets --all-features -- -D warnings
 ## Event Contract
 
 JSONL event names, `run_id`, `task_id`, and monotonic `seq` behavior are public contracts. If you change them, update fixtures and replay/eval tests in the same PR.
+
