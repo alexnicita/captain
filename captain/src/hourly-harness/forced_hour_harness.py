@@ -69,6 +69,12 @@ def parse_checklist(path: Path) -> ChecklistStats:
             done += 1
     return ChecklistStats(total=total, done=done)
 
+def parse_checklist_safe(path: Path) -> ChecklistStats:
+    """Parse checklist, returning empty stats if file missing instead of raising."""
+    try:
+        return parse_checklist(path)
+    except FileNotFoundError:
+        return ChecklistStats(total=0, done=0)
 
 def load_latest_run_dir() -> Path:
     if not LATEST_PTR.exists():
@@ -104,6 +110,11 @@ def create_run_dir(run_id: str | None) -> Path:
 
 
 def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, float, bool]:
+    now = time.time()
+    elapsed = now - state["start_epoch"]
+    remaining = max(0.0, state["min_runtime_sec"] - elapsed)
+    gate_open = remaining <= 0
+    return elapsed, remaining, gate_open
     now = time.time()
     elapsed = now - state["start_epoch"]
     remaining = max(0.0, state["min_runtime_sec"] - elapsed)
