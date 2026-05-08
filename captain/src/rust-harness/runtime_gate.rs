@@ -211,6 +211,7 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
     }
 }
 
+/// Returns the current status of the gate as JSON.
 pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
     let run_dir = resolve_run_dir(args.run_dir.as_deref(), args.base_dir.as_deref())?;
     let state = read_state(&run_dir)?;
@@ -245,6 +246,7 @@ pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
     }))
 }
 
+/// Stops the gate with the provided arguments and returns the result as JSON.
 pub fn gate_stop(args: GateStopArgs) -> Result<serde_json::Value> {
     let run_dir = resolve_run_dir(args.run_dir.as_deref(), args.base_dir.as_deref())?;
     let stop_path = run_dir.join("STOP");
@@ -260,6 +262,7 @@ pub fn gate_stop(args: GateStopArgs) -> Result<serde_json::Value> {
     }))
 }
 
+/// Parses a checklist file at the given path and returns statistics.
 pub fn parse_checklist(path: &Path) -> Result<ChecklistStats> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("failed to read checklist: {}", path.display()))?;

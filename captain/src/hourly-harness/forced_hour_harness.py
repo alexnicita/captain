@@ -270,5 +270,34 @@ def main() -> int:
     return args.func(args)
 
 
+def cmd_clean(args: argparse.Namespace) -> int:
+    """Delete run directories older than max_age_days.
+
+    Args:
+        args: argparse.Namespace with max_age_days (int) specifying the age threshold.
+    Returns:
+        0 on success.
+    """
+    max_age_seconds = args.max_age_days * 86400
+    now = time.time()
+    removed = 0
+    if not RUNS_DIR.exists():
+        print("No runs directory to clean.")
+        return 0
+    for entry in RUNS_DIR.iterdir():
+        if entry.is_dir():
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            if now - mtime > max_age_seconds:
+                # remove directory
+                import shutil
+                shutil.rmtree(entry)
+                removed += 1
+    print(f"Cleaned {removed} run directories older than {args.max_age_days} days.")
+    return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
