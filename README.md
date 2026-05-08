@@ -136,6 +136,9 @@ OpenClaw, Hermes, Claude Code, Codex, and similar agents make it easy to give a 
 
 ## Verification
 
+To run the full Rust test suite (including integration tests), set the environment variable `RUN_RUST_TESTS=1` before invoking the Rust test command.
+
+
 Run the smoke suite:
 
 ```bash
