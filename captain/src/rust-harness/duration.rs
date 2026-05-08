@@ -1,3 +1,8 @@
+/// Parses a human‑readable duration string into seconds.
+///
+/// The input may be a plain number of seconds (e.g. `"3600"`) or a number
+/// followed by a unit suffix: `s` for seconds, `m` for minutes, or `h` for hours.
+/// Zero or negative values are rejected, as are unknown units.
 pub fn parse_duration_seconds(input: &str) -> std::result::Result<u64, String> {
     let input = input.trim();
     if input.is_empty() {
