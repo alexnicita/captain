@@ -210,21 +210,39 @@ def cmd_run(args: argparse.Namespace) -> int:
         time.sleep(args.poll_seconds)
 
 
-def cmd_status(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+def get_run_status(run_dir: Path) -> dict:
+    """Return a dict with current run state and checklist stats.
+
+    Used by :func:`cmd_status` and can be imported by other code.
+    """
     state = read_state(run_dir)
     checklist = parse_checklist(Path(state["checklist_path"]))
     elapsed, remaining, gate_open = summarize_state(state, checklist)
+    return {
+        "run_dir": str(run_dir),
+        "status": state.get("status", "unknown"),
+        "started": state.get("start_iso_utc"),
+        "elapsed_sec": elapsed,
+        "remaining_sec": remaining,
+        "gate_open": gate_open,
+        "checklist_done": checklist.done,
+        "checklist_total": checklist.total,
+        "all_done": checklist.all_done,
+        "can_finish_now": gate_open and checklist.all_done,
+    }
 
-    print(f"run_dir: {run_dir}")
-    print(f"status: {state.get('status', 'unknown')}")
-    print(f"started: {state['start_iso_utc']}")
-    print(f"elapsed_sec: {elapsed:.0f}")
-    print(f"remaining_sec: {remaining:.0f}")
-    print(f"runtime_gate_open: {gate_open}")
-    print(f"checklist: {checklist.done}/{checklist.total} done")
-    print(f"all_checklist_done: {checklist.all_done}")
-    print(f"can_finish_now: {gate_open and checklist.all_done}")
+def cmd_status(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    info = get_run_status(run_dir)
+    print(f"run_dir: {info['run_dir']}")
+    print(f"status: {info['status']}")
+    print(f"started: {info['started']}")
+    print(f"elapsed_sec: {info['elapsed_sec']:.0f}")
+    print(f"remaining_sec: {info['remaining_sec']:.0f}")
+    print(f"runtime_gate_open: {info['gate_open']}")
+    print(f"checklist: {info['checklist_done']}/{info['checklist_total']} done")
+    print(f"all_checklist_done: {info['all_done']}")
+    print(f"can_finish_now: {info['can_finish_now']}")
     print(f"progress_log: {run_dir / 'progress.log'}")
     return 0
 
