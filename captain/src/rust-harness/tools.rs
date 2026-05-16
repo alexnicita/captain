@@ -52,6 +52,7 @@ impl ToolPolicy {
         }
     }
 
+    /// Create a policy that only allows the specified tool names.
     pub fn allow_only(names: impl IntoIterator<Item = String>) -> Self {
         Self {
             mode: ToolPolicyMode::AllowList,
