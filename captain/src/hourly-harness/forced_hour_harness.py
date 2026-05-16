@@ -55,6 +55,15 @@ def fmt_ts(ts: float) -> str:
 
 
 def parse_checklist(path: Path) -> ChecklistStats:
+    """Parse a markdown checklist file and count total and completed items.
+
+    Args:
+        path: Path to the checklist markdown file.
+    Returns:
+        ChecklistStats with total items and number done.
+    Raises:
+        FileNotFoundError: If the checklist file does not exist.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Checklist not found: {path}")
 
