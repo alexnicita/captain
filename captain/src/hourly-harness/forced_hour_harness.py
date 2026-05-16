@@ -269,6 +269,24 @@ def main() -> int:
     args = parser.parse_args()
     return args.func(args)
 
+__all__ = [
+    "ChecklistStats",
+    "utc_now",
+    "fmt_ts",
+    "parse_checklist",
+    "load_latest_run_dir",
+    "append_log",
+    "write_state",
+    "read_state",
+    "create_run_dir",
+    "summarize_state",
+    "cmd_run",
+    "cmd_status",
+    "cmd_stop",
+    "build_parser",
+    "main",
+]
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
