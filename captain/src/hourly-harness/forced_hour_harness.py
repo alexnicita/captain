@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-"""Forced runtime harness.
+"""Forced runtime harness module.
 
-Blocks completion until BOTH:
-1) minimum runtime has elapsed
-2) all checklist items are marked complete
-
-Usage examples:
-  python3 captain/harnesses/hourly-harness/forced_hour_harness.py run --checklist captain/harnesses/hourly-harness/checklist.md
-  python3 captain/harnesses/hourly-harness/forced_hour_harness.py status
-  python3 captain/harnesses/hourly-harness/forced_hour_harness.py stop
-  python3 captain/harnesses/hourly-harness/forced_hour_harness.py run --checklist captain/harnesses/hourly-harness/checklist.md --dry-run
+Provides CLI to enforce minimum runtime and checklist completion before allowing
+the process to finish. Used by the hourly harness infrastructure.
 """
 
-from __future__ import annotations
+
+
+
 
 import argparse
 import dataclasses
@@ -113,6 +108,8 @@ def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, floa
 
 def cmd_run(args: argparse.Namespace) -> int:
     checklist = Path(args.checklist).resolve()
+    if not checklist.exists():
+        raise FileNotFoundError(f"Checklist file not found: {checklist}")
     if args.dry_run:
         min_runtime_sec = int(args.dry_runtime_sec)
         heartbeat_sec = int(args.dry_heartbeat_sec)
