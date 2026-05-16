@@ -114,6 +114,12 @@ def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, floa
 def cmd_run(args: argparse.Namespace) -> int:
     checklist = Path(args.checklist).resolve()
     if args.dry_run:
+        # Ensure dry runtime is positive
+        if args.dry_runtime_sec <= 0:
+            raise ValueError("dry runtime seconds must be > 0")
+        # Ensure dry heartbeat is positive
+        if args.dry_heartbeat_sec <= 0:
+            raise ValueError("dry heartbeat seconds must be > 0")
         min_runtime_sec = int(args.dry_runtime_sec)
         heartbeat_sec = int(args.dry_heartbeat_sec)
     else:
