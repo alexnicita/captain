@@ -32,6 +32,7 @@ Environment overrides:
   CAPTAIN_OPENROUTER_ENV        Env file path (default: <install-dir>/.env.openrouter)
 
 Options:
+  
   --setup-openrouter             Run OpenRouter setup after Captain install/update
   --openrouter-model <id>        OpenRouter model id for setup
   --openrouter-env <path>        Override OpenRouter env file path
