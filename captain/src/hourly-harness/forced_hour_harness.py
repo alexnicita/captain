@@ -90,7 +90,27 @@ def write_state(run_dir: Path, state: dict) -> None:
 
 
 def read_state(run_dir: Path) -> dict:
+    """Read the JSON state file for a run.
+
+    Args:
+        run_dir: Directory containing ``state.json``.
+    Returns:
+        Parsed state dictionary.
+    """
     return json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+
+
+def get_status(run_dir: Path) -> dict:
+    """Conveniently retrieve the current status string from a run.
+
+    Returns the ``status`` field from the stored state, or ``"unknown"`` if
+    the state file cannot be read.
+    """
+    try:
+        state = read_state(run_dir)
+        return state.get("status", "unknown")
+    except Exception:
+        return "unknown"
 
 
 def create_run_dir(run_id: str | None) -> Path:
