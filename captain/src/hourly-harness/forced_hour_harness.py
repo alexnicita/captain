@@ -55,6 +55,12 @@ def fmt_ts(ts: float) -> str:
 
 
 def parse_checklist(path: Path) -> ChecklistStats:
+    """Parse a markdown checklist file and count total and completed items.
+
+    Each line with a markdown checkbox (e.g. "- [x] Task") is counted. The function
+    returns a :class:`ChecklistStats` with the total number of checkboxes and the
+    number marked as done.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Checklist not found: {path}")
 
@@ -70,7 +76,22 @@ def parse_checklist(path: Path) -> ChecklistStats:
     return ChecklistStats(total=total, done=done)
 
 
+def checklist_progress(stats: ChecklistStats) -> float:
+    """Return the completion ratio of the checklist as a float between 0 and 1.
+
+    If the checklist contains no items, ``0.0`` is returned to avoid division by
+    zero.
+    """
+    if stats.total == 0:
+        return 0.0
+    return stats.done / stats.total
+
 def load_latest_run_dir() -> Path:
+    """Return the path pointed to by the LATEST_PTR file.
+
+    Raises ``FileNotFoundError`` if the pointer file is missing or points to a
+    non‑existent directory.
+    """
     if not LATEST_PTR.exists():
         raise FileNotFoundError("No latest run pointer found. Start a run first.")
     path = Path(LATEST_PTR.read_text(encoding="utf-8").strip())
