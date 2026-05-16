@@ -152,7 +152,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     stop_path = run_dir / "STOP"
     next_heartbeat = 0.0
 
-    def _handle_term(signum, _frame):
+    def _handle_term(signum: int, _frame) -> None:
         append_log(run_dir, f"RECEIVED_SIGNAL signum={signum}; stopping")
         cur = read_state(run_dir)
         cur["status"] = "stopped_by_signal"
