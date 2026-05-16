@@ -224,6 +224,9 @@ fn load_key_from_openclaw_auth_profiles(
     api_key_env: Option<&str>,
 ) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
+    // The auth profiles file may contain escaped quotes (e.g., from legacy writes);
+    // clean them to ensure valid JSON parsing.
+    let text = text.replace("\\\"", "\"");
     let payload: Value = serde_json::from_str(&text).ok()?;
     let profiles = payload.pointer("/profiles")?.as_object()?;
 
@@ -421,24 +424,24 @@ pub struct HttpProviderStub {
     pub model: String,
 }
 
-#[async_trait]
-impl Provider for HttpProviderStub {
-    fn name(&self) -> &'static str {
-        "http-stub"
-    }
+    #[async_trait]
+    impl Provider for HttpProviderStub {
+        fn name(&self) -> &'static str {
+            "http-stub"
+        }
 
-    async fn generate(&self, req: &ProviderRequest) -> Result<ProviderResponse> {
-        Ok(ProviderResponse {
-            message: format!(
-                "HTTP stub accepted objective='{}' endpoint='{}' model='{}'",
-                req.objective, self.endpoint, self.model
-            ),
-            tool_calls: Vec::new(),
-            done: true,
-            raw: None,
-        })
+        async fn generate(&self, req: &ProviderRequest) -> Result<ProviderResponse> {
+            Ok(ProviderResponse {
+                message: format!(
+                    "HTTP stub accepted objective='{}' endpoint='{}' model='{}'",
+                    req.objective, self.endpoint, self.model
+                ),
+                tool_calls: Vec::new(),
+                done: true,
+                raw: None,
+            })
+        }
     }
-}
 
 pub struct BuiltProvider {
     pub provider: Box<dyn Provider>,
@@ -520,11 +523,31 @@ mod tests {
         let path = dir.path().join("auth-profiles.json");
         fs::write(
             &path,
-            r#"{"profiles":{"openrouter:default":{"key":"or-test-key"}}}"#,
+            r#"{\"profiles\":{\"openrouter:default\":{\"key\":\"or-test-key\"}}}"#,
         )
         .unwrap();
 
         let key = load_key_from_openclaw_auth_profiles(&path, Some("OPENROUTER_API_KEY"));
         assert_eq!(key.as_deref(), Some("or-test-key"));
     }
+
+    #[test]
+    fn http_provider_stub_generates_expected_message() {
+        let stub = HttpProviderStub {
+            endpoint: "https://api.test.com/v1/responses".to_string(),
+            model: "test-model".to_string(),
+        };
+        let req = ProviderRequest {
+            objective: "test objective".to_string(),
+            context: vec![],
+            available_tools: vec![],
+        };
+        let resp = futures::executor::block_on(stub.generate(&req)).unwrap();
+        assert!(resp.message.contains("HTTP stub accepted objective='test objective'"));
+        assert!(resp.message.contains("endpoint='https://api.test.com/v1/responses'"));
+        assert!(resp.message.contains("model='test-model'"));
+        assert!(resp.done);
+        assert!(resp.tool_calls.is_empty());
+    }
+
 }
