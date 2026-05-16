@@ -20,6 +20,7 @@ Usage:
     bash -s -- --setup-openrouter --openrouter-model anthropic/claude-sonnet-4.6
 
 Environment overrides:
+  CAPTAIN_OPENROUTER_NON_INTERACTIVE=1   Run OpenRouter setup non-interactively
   CAPTAIN_INSTALL_DIR   Install/update directory (default: ~/.captain)
   CAPTAIN_BIN_DIR       Symlink directory for captain command (default: ~/.local/bin)
   CAPTAIN_BRANCH        Git branch to install (default: main)
