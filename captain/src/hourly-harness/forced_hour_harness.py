@@ -120,7 +120,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         min_runtime_sec = int(args.min_runtime_minutes * 60)
         heartbeat_sec = int(args.heartbeat_minutes * 60)
 
-    if heartbeat_sec <= 0:
+    if args.poll_seconds <= 0:
+        raise ValueError("poll_seconds must be > 0")
         raise ValueError("heartbeat interval must be > 0")
 
     run_dir = create_run_dir(args.run_id)
@@ -247,7 +248,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--run-id", help="Optional run suffix")
     p_run.add_argument("--min-runtime-minutes", type=float, default=60.0)
     p_run.add_argument("--heartbeat-minutes", type=float, default=10.0)
-    p_run.add_argument("--poll-seconds", type=int, default=15)
+    p_run.add_argument("--poll-seconds", type=int, default=15, help="Polling interval in seconds (must be >0)")
     p_run.add_argument("--dry-run", action="store_true", help="Use short timings for testing")
     p_run.add_argument("--dry-runtime-sec", type=int, default=75)
     p_run.add_argument("--dry-heartbeat-sec", type=int, default=12)
