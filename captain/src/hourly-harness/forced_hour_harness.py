@@ -122,6 +122,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     if heartbeat_sec <= 0:
         raise ValueError("heartbeat interval must be > 0")
+    if min_runtime_sec <= 0:
+        raise ValueError("minimum runtime must be > 0")
 
     run_dir = create_run_dir(args.run_id)
     state = {
