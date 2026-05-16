@@ -1,3 +1,4 @@
+/// Normalizes a scope token by converting to lowercase and replacing delimiters with hyphens.
 pub fn normalize_scope_token(input: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
@@ -18,6 +19,7 @@ pub fn normalize_scope_token(input: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+/// Normalizes the subject text by trimming whitespace and collapsing multiple spaces.
 pub fn normalize_subject_text(subject: &str) -> String {
     subject
         .to_ascii_lowercase()
