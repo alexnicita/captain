@@ -16,6 +16,8 @@ The operating idea is simple: agents can work longer when the run has a flight r
 
 ## Use Captain on an Agent Machine
 
+**Note:** For full linting support, install Clippy with `rustup component add clippy`.
+
 Captain is for the machine where your agents already live: an EC2 instance or MacBook with OpenClaw, Hermes, Claude Code, Codex, or another coding-agent CLI installed. Add Captain to that box, put `captain` on `PATH`, and run agents through Captain when you want better control: timeboxes, logs, command policy, commit gates, replayable events, and opt-in pushes.
 
 ```bash
