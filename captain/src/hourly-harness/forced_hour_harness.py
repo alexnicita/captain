@@ -229,6 +229,28 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clean(args: argparse.Namespace) -> int:
+    """Remove all run directories except the latest one.
+    Useful for housekeeping in CI environments.
+    """
+    # Determine latest run directory
+    try:
+        latest = load_latest_run_dir()
+    except FileNotFoundError:
+        print("No runs to clean.")
+        return 0
+    removed = 0
+    for entry in RUNS_DIR.iterdir():
+        if entry.is_dir() and entry != latest:
+            try:
+                import shutil
+                shutil.rmtree(entry)
+                removed += 1
+            except Exception as e:
+                print(f"Failed to remove {entry}: {e}")
+    print(f"Cleaned {removed} old run directories; preserved latest: {latest}")
+    return 0
+
 def cmd_stop(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
     stop_path = run_dir / "STOP"
@@ -239,6 +261,8 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Added clean subcommand to purge old run directories
+    
     parser = argparse.ArgumentParser(description="Forced one-hour execution harness")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -258,8 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.set_defaults(func=cmd_status)
 
     p_stop = sub.add_parser("stop", help="Request stop for current/latest run")
-    p_stop.add_argument("--run-dir", help="Explicit run dir; otherwise uses latest")
-    p_stop.set_defaults(func=cmd_stop)
+
 
     return parser
 
