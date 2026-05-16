@@ -153,3 +153,4 @@ esac
 
 echo "[captain-install] try: captain hermes \"fix the failing tests\" --repo . --time 45m --dry-run"
 echo "[captain-install] OpenRouter setup: captain openrouter setup"
+

@@ -212,7 +212,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
-    state = read_state(run_dir)
+    try:
+        state = read_state(run_dir)
+    except FileNotFoundError:
+        print(f"State file not found in run directory: {run_dir}")
+        return 1
     checklist = parse_checklist(Path(state["checklist_path"]))
     elapsed, remaining, gate_open = summarize_state(state, checklist)
 
