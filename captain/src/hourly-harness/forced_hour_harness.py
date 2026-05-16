@@ -27,6 +27,21 @@ from pathlib import Path
 from typing import Tuple
 
 ROOT = Path(__file__).resolve().parent
+
+__all__ = [
+    "ChecklistStats",
+    "utc_now",
+    "fmt_ts",
+    "parse_checklist",
+    "load_latest_run_dir",
+    "append_log",
+    "write_state",
+    "read_state",
+    "create_run_dir",
+    "summarize_state",
+    "cmd_run",
+]
+
 RUNS_DIR = ROOT / "runs"
 LATEST_PTR = RUNS_DIR / "latest_run.txt"
 CHECKBOX_RE = re.compile(r"^\s*[-*]\s+\[( |x|X)\]\s+(.+?)\s*$")
@@ -55,6 +70,11 @@ def fmt_ts(ts: float) -> str:
 
 
 def parse_checklist(path: Path) -> ChecklistStats:
+    """Parse a markdown checklist file and count total and completed items.
+
+    The checklist format expects lines like ``- [ ] task`` or ``- [x] task``.
+    Returns a ``ChecklistStats`` object with ``total`` and ``done`` counts.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Checklist not found: {path}")
 
@@ -104,6 +124,12 @@ def create_run_dir(run_id: str | None) -> Path:
 
 
 def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, float, bool]:
+    """Compute elapsed time, remaining runtime, and whether the runtime gate is open.
+
+    ``state`` contains ``start_epoch`` and ``min_runtime_sec`` among other keys.
+    Returns a tuple ``(elapsed, remaining, gate_open)`` where ``gate_open`` is True
+    when the minimum runtime has been satisfied.
+    """
     now = time.time()
     elapsed = now - state["start_epoch"]
     remaining = max(0.0, state["min_runtime_sec"] - elapsed)
