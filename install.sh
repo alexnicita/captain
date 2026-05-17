@@ -78,6 +78,7 @@ need_cmd() {
 }
 
 need_cmd git
+need_cmd curl
 need_cmd bash
 
 run_openrouter_setup_if_requested() {
