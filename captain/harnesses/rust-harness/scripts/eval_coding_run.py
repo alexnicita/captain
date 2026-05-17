@@ -4,6 +4,7 @@ import sys
 from collections import Counter
 from typing import Iterable, Dict, Any
 
+
 def evaluate_records(records: Iterable[Dict[str, Any]], run_id: str) -> Dict[str, Any]:
     counts = Counter()
     cycles = 0
@@ -17,22 +18,22 @@ def evaluate_records(records: Iterable[Dict[str, Any]], run_id: str) -> Dict[str
         if not isinstance(o, dict):
             malformed_events += 1
             continue
-        if o.get('run_id') != run_id:
+        if o.get("run_id") != run_id:
             continue
-        k = o.get('kind')
+        k = o.get("kind")
         counts[k] += 1
-        if k == 'task.finished':
+        if k == "task.finished":
             cycles += 1
-        if k == 'coding.cycle.act':
-            if o.get('data', {}).get('success'):
+        if k == "coding.cycle.act":
+            if o.get("data", {}).get("success"):
                 act_ok += 1
             else:
                 act_fail += 1
-        if k == 'git.commit':
-            d = o.get('data', {})
-            if d.get('result') == 'ok':
+        if k == "git.commit":
+            d = o.get("data", {})
+            if d.get("result") == "ok":
                 commit_ok += 1
-            if d.get('result') == 'rejected':
+            if d.get("result") == "rejected":
                 commit_rejected += 1
 
     quality = 0
@@ -43,19 +44,20 @@ def evaluate_records(records: Iterable[Dict[str, Any]], run_id: str) -> Dict[str
     quality = max(0, min(100, quality))
 
     return {
-        'run_id': run_id,
-        'cycles': cycles,
-        'act_ok': act_ok,
-        'act_fail': act_fail,
-        'commit_ok': commit_ok,
-        'commit_rejected': commit_rejected,
-        'malformed_events': malformed_events,
-        'quality_score_100': quality,
-        'counts': dict(counts),
+        "run_id": run_id,
+        "cycles": cycles,
+        "act_ok": act_ok,
+        "act_fail": act_fail,
+        "commit_ok": commit_ok,
+        "commit_rejected": commit_rejected,
+        "malformed_events": malformed_events,
+        "quality_score_100": quality,
+        "counts": dict(counts),
     }
 
+
 def load_jsonl(path: str):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
             if not stripped:
@@ -77,5 +79,5 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main(sys.argv))

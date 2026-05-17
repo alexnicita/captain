@@ -55,6 +55,7 @@ def fmt_ts(ts: float) -> str:
 
 
 def parse_checklist(path: Path) -> ChecklistStats:
+    """Parse a markdown checklist and count total and completed items."""
     if not path.exists():
         raise FileNotFoundError(f"Checklist not found: {path}")
 
@@ -68,6 +69,14 @@ def parse_checklist(path: Path) -> ChecklistStats:
         if m.group(1).lower() == "x":
             done += 1
     return ChecklistStats(total=total, done=done)
+
+
+def parse_checklist_safe(path: Path) -> ChecklistStats:
+    """Parse a checklist, returning empty stats if the file is missing."""
+    try:
+        return parse_checklist(path)
+    except FileNotFoundError:
+        return ChecklistStats(total=0, done=0)
 
 
 def load_latest_run_dir() -> Path:
@@ -90,7 +99,16 @@ def write_state(run_dir: Path, state: dict) -> None:
 
 
 def read_state(run_dir: Path) -> dict:
+    """Read the JSON state file for a run directory."""
     return json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+
+
+def get_status(run_dir: Path) -> str:
+    """Return the stored status string for a run, or unknown if unreadable."""
+    try:
+        return str(read_state(run_dir).get("status", "unknown"))
+    except Exception:
+        return "unknown"
 
 
 def create_run_dir(run_id: str | None) -> Path:
@@ -104,6 +122,7 @@ def create_run_dir(run_id: str | None) -> Path:
 
 
 def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, float, bool]:
+    """Compute elapsed time, remaining runtime, and gate-open state."""
     now = time.time()
     elapsed = now - state["start_epoch"]
     remaining = max(0.0, state["min_runtime_sec"] - elapsed)
@@ -210,10 +229,18 @@ def cmd_run(args: argparse.Namespace) -> int:
         time.sleep(args.poll_seconds)
 
 
+def _get_checklist_from_state(state: dict) -> ChecklistStats:
+    return parse_checklist(Path(state["checklist_path"]))
+
+
 def cmd_status(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    try:
+        run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
     state = read_state(run_dir)
-    checklist = parse_checklist(Path(state["checklist_path"]))
+    checklist = _get_checklist_from_state(state)
     elapsed, remaining, gate_open = summarize_state(state, checklist)
 
     print(f"run_dir: {run_dir}")
@@ -230,7 +257,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    try:
+        run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
     stop_path = run_dir / "STOP"
     stop_path.write_text(f"stop requested at {utc_now().isoformat()}\n", encoding="utf-8")
     append_log(run_dir, "STOP requested by operator")
@@ -272,3 +303,24 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+__all__ = [
+    "ChecklistStats",
+    "utc_now",
+    "fmt_ts",
+    "parse_checklist",
+    "parse_checklist_safe",
+    "load_latest_run_dir",
+    "append_log",
+    "write_state",
+    "read_state",
+    "get_status",
+    "create_run_dir",
+    "summarize_state",
+    "cmd_run",
+    "cmd_status",
+    "cmd_stop",
+    "build_parser",
+    "main",
+]
