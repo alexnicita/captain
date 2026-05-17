@@ -103,7 +103,7 @@ def create_run_dir(run_id: str | None) -> Path:
     return run_dir
 
 
-def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, float, bool]:
+def summarize_state(state: dict) -> Tuple[float, float, bool]:
     now = time.time()
     elapsed = now - state["start_epoch"]
     remaining = max(0.0, state["min_runtime_sec"] - elapsed)
@@ -174,7 +174,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             return 2
 
         checklist_stats = parse_checklist(checklist)
-        elapsed, remaining, gate_open = summarize_state(state, checklist_stats)
+        elapsed, remaining, gate_open = summarize_state(state)
 
         now = time.time()
         if now >= next_heartbeat:
@@ -214,7 +214,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
     state = read_state(run_dir)
     checklist = parse_checklist(Path(state["checklist_path"]))
-    elapsed, remaining, gate_open = summarize_state(state, checklist)
+    elapsed, remaining, gate_open = summarize_state(state)
 
     print(f"run_dir: {run_dir}")
     print(f"status: {state.get('status', 'unknown')}")
