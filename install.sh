@@ -104,7 +104,7 @@ run_openrouter_setup_if_requested() {
   fi
 
   echo "[captain-install] running OpenRouter setup"
-  if [[ "${CAPTAIN_OPENROUTER_NON_INTERACTIVE:-0}" == "1" ]]; then
+  if [[ "${CAPTAIN_OPENROUTER_NON_INTERACTIVE:-0}" == "1" ]]; then  # non-interactive mode forced
     bash "$setup_script" --non-interactive "${args[@]}"
   elif [[ -r /dev/tty ]]; then
     bash "$setup_script" "${args[@]}" </dev/tty
