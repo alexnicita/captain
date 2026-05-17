@@ -13,10 +13,12 @@ pub struct ChecklistStats {
 }
 
 impl ChecklistStats {
+    /// Returns the number of pending checklist items.
     pub fn pending(self) -> usize {
         self.total.saturating_sub(self.done)
     }
 
+    /// Returns true if all checklist items are completed.
     pub fn all_done(self) -> bool {
         self.total > 0 && self.done == self.total
     }
