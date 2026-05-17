@@ -20,7 +20,7 @@ import json
 import os
 import re
 import signal
-import sys
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,6 +104,39 @@ def create_run_dir(run_id: str | None) -> Path:
 
 
 def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, float, bool]:
+    now = time.time()
+    elapsed = now - state["start_epoch"]
+    remaining = max(0.0, state["min_runtime_sec"] - elapsed)
+    gate_open = remaining <= 0
+    return elapsed, remaining, gate_open
+
+
+def clean_old_runs(days: int = 7) -> None:
+    """Delete run directories older than *days* days.
+
+    Args:
+        days: Number of days to retain runs. Runs older than this are removed.
+    """
+    cutoff = time.time() - days * 86400
+    if not RUNS_DIR.exists():
+        return
+    for entry in RUNS_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        try:
+            # Use the directory name timestamp part after 'run-'
+            timestamp = entry.name.split("run-")[1].split("-")[0]
+            # Parse timestamp format %Y%m%dT%H%M%SZ
+            dt = datetime.strptime(timestamp, "%Y%m%dT%H%M%SZ")
+            dir_time = dt.replace(tzinfo=timezone.utc).timestamp()
+        except Exception:
+            # Fallback to modification time
+            dir_time = entry.stat().st_mtime
+        if dir_time < cutoff:
+            # Remove directory recursively
+            shutil.rmtree(entry)
+
+
     now = time.time()
     elapsed = now - state["start_epoch"]
     remaining = max(0.0, state["min_runtime_sec"] - elapsed)
@@ -260,6 +293,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_stop = sub.add_parser("stop", help="Request stop for current/latest run")
     p_stop.add_argument("--run-dir", help="Explicit run dir; otherwise uses latest")
     p_stop.set_defaults(func=cmd_stop)
+
+    p_clean = sub.add_parser("clean", help="Delete old run directories")
+    p_clean.add_argument("--days", type=int, default=7, help="Number of days to retain runs")
+    p_clean.set_defaults(func=lambda args: (clean_old_runs(args.days), 0))
 
     return parser
 
