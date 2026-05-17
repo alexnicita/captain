@@ -103,7 +103,9 @@ def create_run_dir(run_id: str | None) -> Path:
     return run_dir
 
 
-def summarize_state(state: dict, checklist: ChecklistStats) -> Tuple[float, float, bool]:
+def summarize_state(
+    state: dict, checklist: ChecklistStats
+) -> Tuple[float, float, bool]:
     now = time.time()
     elapsed = now - state["start_epoch"]
     remaining = max(0.0, state["min_runtime_sec"] - elapsed)
@@ -232,7 +234,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 def cmd_stop(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
     stop_path = run_dir / "STOP"
-    stop_path.write_text(f"stop requested at {utc_now().isoformat()}\n", encoding="utf-8")
+    stop_path.write_text(
+        f"stop requested at {utc_now().isoformat()}\n", encoding="utf-8"
+    )
     append_log(run_dir, "STOP requested by operator")
     print(f"Stop requested: {stop_path}")
     return 0
@@ -243,12 +247,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_run = sub.add_parser("run", help="Start and enforce a run")
-    p_run.add_argument("--checklist", required=True, help="Markdown checklist with - [ ] / - [x] items")
+    p_run.add_argument(
+        "--checklist", required=True, help="Markdown checklist with - [ ] / - [x] items"
+    )
     p_run.add_argument("--run-id", help="Optional run suffix")
     p_run.add_argument("--min-runtime-minutes", type=float, default=60.0)
     p_run.add_argument("--heartbeat-minutes", type=float, default=10.0)
     p_run.add_argument("--poll-seconds", type=int, default=15)
-    p_run.add_argument("--dry-run", action="store_true", help="Use short timings for testing")
+    p_run.add_argument(
+        "--dry-run", action="store_true", help="Use short timings for testing"
+    )
     p_run.add_argument("--dry-runtime-sec", type=int, default=75)
     p_run.add_argument("--dry-heartbeat-sec", type=int, default=12)
     p_run.set_defaults(func=cmd_run)
