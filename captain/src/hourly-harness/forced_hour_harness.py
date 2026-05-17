@@ -14,6 +14,9 @@ Usage examples:
 
 from __future__ import annotations
 
+import logging
+import argparse
+
 import argparse
 import dataclasses
 import json
@@ -24,7 +27,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Tuple
+print = lambda *args, **kwargs: logging.info(' '.join(str(a) for a in args))
 
 ROOT = Path(__file__).resolve().parent
 RUNS_DIR = ROOT / "runs"
@@ -145,8 +148,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         ),
     )
 
-    print(f"Run directory: {run_dir}")
-    print(f"Started at: {state['start_iso_utc']}")
+    logging.debug(f"Run directory: {run_dir}")
+    logging.debug(f"Started at: {state['start_iso_utc']}")
     print("Harness is now enforcing runtime + checklist completion gates...")
 
     stop_path = run_dir / "STOP"
