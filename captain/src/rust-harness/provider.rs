@@ -224,6 +224,7 @@ fn load_key_from_openclaw_auth_profiles(
     api_key_env: Option<&str>,
 ) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
+    let text = text.replace("\\\"", "\"");
     let payload: Value = serde_json::from_str(&text).ok()?;
     let profiles = payload.pointer("/profiles")?.as_object()?;
 
@@ -521,6 +522,20 @@ mod tests {
         fs::write(
             &path,
             r#"{"profiles":{"openrouter:default":{"key":"or-test-key"}}}"#,
+        )
+        .unwrap();
+
+        let key = load_key_from_openclaw_auth_profiles(&path, Some("OPENROUTER_API_KEY"));
+        assert_eq!(key.as_deref(), Some("or-test-key"));
+    }
+
+    #[test]
+    fn openrouter_key_can_be_loaded_from_escaped_auth_profiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth-profiles.json");
+        fs::write(
+            &path,
+            r#"{\"profiles\":{\"openrouter:default\":{\"key\":\"or-test-key\"}}}"#,
         )
         .unwrap();
 

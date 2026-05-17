@@ -171,7 +171,7 @@ impl EventSink {
             event.run_id = Some(self.run_id().to_string());
         }
         if event.seq.is_none() {
-            let mut next_seq = self.next_seq.lock().expect("event seq mutex poisoned");
+            let mut next_seq = self.next_seq.lock().map_err(|e| anyhow::anyhow!("event seq mutex poisoned: {}", e))?;
             event.seq = Some(*next_seq);
             *next_seq += 1;
         }
@@ -179,7 +179,7 @@ impl EventSink {
         let mut line = serde_json::to_vec(&event).context("failed to serialize event")?;
         line.push(b'\n');
 
-        let mut guard = self.file.lock().expect("event sink mutex poisoned");
+        let mut guard = self.file.lock().map_err(|e| anyhow::anyhow!("event sink mutex poisoned: {}", e))?;
         guard
             .write_all(&line)
             .context("failed to append event line")?;
