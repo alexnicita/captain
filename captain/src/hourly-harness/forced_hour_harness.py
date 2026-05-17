@@ -20,8 +20,8 @@ import json
 import os
 import re
 import signal
-import sys
 import time
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Tuple
@@ -239,6 +239,10 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Construct the CLI parser with all subcommands.
+
+    Added ``clean`` subcommand to remove old run directories.
+    """
     parser = argparse.ArgumentParser(description="Forced one-hour execution harness")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -257,12 +261,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--run-dir", help="Explicit run dir; otherwise uses latest")
     p_status.set_defaults(func=cmd_status)
 
+    p_clean = sub.add_parser("clean", help="Remove old run directories")
+    p_clean.add_argument("--days", type=int, default=30, help="Delete runs older than this many days")
+    p_clean.set_defaults(func=cmd_clean)
     p_stop = sub.add_parser("stop", help="Request stop for current/latest run")
     p_stop.add_argument("--run-dir", help="Explicit run dir; otherwise uses latest")
     p_stop.set_defaults(func=cmd_stop)
 
     return parser
 
+
+def cmd_clean(args: argparse.Namespace) -> int:
+    """Remove run directories older than the specified number of days.
+
+    Args:
+        args: Parsed arguments containing ``days``.
+    Returns:
+        Exit code ``0`` on success.
+    """
+    cutoff = time.time() - args.days * 86400
+    removed = 0
+    for run_dir in RUNS_DIR.iterdir():
+        if not run_dir.is_dir():
+            continue
+        # Skip latest pointer file
+        if run_dir.name.startswith("run-"):
+            # Use the directory's modification time as proxy for creation
+            if run_dir.stat().st_mtime < cutoff:
+                try:
+                    # Remove directory recursively
+
+                    shutil.rmtree(run_dir)
+                    removed += 1
+                except Exception as e:
+                    print(f"Failed to remove {run_dir}: {e}")
+    print(f"Removed {removed} run directories older than {args.days} days.")
+    return 0
 
 def main() -> int:
     parser = build_parser()
