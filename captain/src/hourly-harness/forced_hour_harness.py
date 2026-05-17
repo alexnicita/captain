@@ -230,6 +230,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
+    # Ensure the run directory exists before creating STOP file
+    if not Path(args.run_dir or LATEST_PTR.read_text(encoding='utf-8').strip()).exists():
+        raise FileNotFoundError('Run directory not found. Use --run-dir to specify a valid run.')
     run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
     stop_path = run_dir / "STOP"
     stop_path.write_text(f"stop requested at {utc_now().isoformat()}\n", encoding="utf-8")
