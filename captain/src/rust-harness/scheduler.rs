@@ -89,10 +89,7 @@ impl<'a> Scheduler<'a> {
                         })),
                 )?;
 
-                let task_spec = TaskSpec {
-                    task_id: item.task_id,
-                    objective: item.objective,
-                };
+                let task_spec = TaskSpec { task_id: item.task_id, objective: item.objective };
                 let fut = async move { (task_id, self.orchestrator.run_task(task_spec).await) };
                 in_flight.push(fut);
             }
@@ -106,12 +103,13 @@ impl<'a> Scheduler<'a> {
 
             let next_result = timeout(Duration::from_millis(poll_ms), in_flight.next()).await;
             let Ok(Some((task_id, result))) = next_result else {
-                self.event_sink
-                    .emit(&HarnessEvent::new(kinds::SCHEDULER_TICK).with_data(json!({
+                self.event_sink.emit(&HarnessEvent::new(kinds::SCHEDULER_TICK).with_data(
+                    json!({
                         "queue_depth": queue.len(),
                         "in_flight": in_flight.len(),
                         "poll_ms": poll_ms,
-                    })))?;
+                    }),
+                ))?;
                 continue;
             };
 
@@ -141,12 +139,12 @@ impl<'a> Scheduler<'a> {
                             })),
                     )?;
                     self.event_sink.emit(
-                        &HarnessEvent::new(kinds::TASK_FINISHED)
-                            .with_task_id(task_id)
-                            .with_data(json!({
+                        &HarnessEvent::new(kinds::TASK_FINISHED).with_task_id(task_id).with_data(
+                            json!({
                                 "reason": "scheduler_task_failed",
                                 "error": err.to_string(),
-                            })),
+                            }),
+                        ),
                     )?;
                 }
             }
@@ -154,12 +152,7 @@ impl<'a> Scheduler<'a> {
 
         task_summaries.sort_by(|a, b| a.task_id.cmp(&b.task_id));
 
-        Ok(BatchSummary {
-            total,
-            completed,
-            failed,
-            task_summaries,
-        })
+        Ok(BatchSummary { total, completed, failed, task_summaries })
     }
 }
 

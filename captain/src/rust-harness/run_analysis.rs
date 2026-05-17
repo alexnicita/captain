@@ -115,10 +115,7 @@ impl RunMetricsCollector {
     }
 
     pub fn consume(&mut self, event: &HarnessEvent) {
-        if matches!(
-            event.kind.as_str(),
-            kinds::RUN_STARTED | kinds::CODING_RUN_STARTED
-        ) {
+        if matches!(event.kind.as_str(), kinds::RUN_STARTED | kinds::CODING_RUN_STARTED) {
             if let Some(run_id) = event.run_id.clone() {
                 self.contexts.insert(run_id, RunContext::from_event(event));
             }
@@ -127,11 +124,7 @@ impl RunMetricsCollector {
         apply_event_to_metrics(&mut self.metrics, event);
 
         let group_key = self.group_key(event);
-        let group = self
-            .rollups
-            .by_model_executor_provider
-            .entry(group_key)
-            .or_default();
+        let group = self.rollups.by_model_executor_provider.entry(group_key).or_default();
         apply_event_to_metrics(group, event);
 
         self.apply_tool_rollup(event);
@@ -167,10 +160,7 @@ impl RunMetricsCollector {
                 let rollup = self.rollups.by_tool.entry(tool).or_default();
                 rollup.errors += 1;
                 if let Some(classified) = classified {
-                    *rollup
-                        .error_counts_by_class
-                        .entry(classified.class)
-                        .or_default() += 1;
+                    *rollup.error_counts_by_class.entry(classified.class).or_default() += 1;
                 }
             }
             _ => {}
@@ -183,10 +173,7 @@ fn apply_event_to_metrics(metrics: &mut RunMetrics, event: &HarnessEvent) {
         metrics.run_ids.insert(run_id);
     }
 
-    if matches!(
-        event.kind.as_str(),
-        kinds::RUN_STARTED | kinds::CODING_RUN_STARTED
-    ) {
+    if matches!(event.kind.as_str(), kinds::RUN_STARTED | kinds::CODING_RUN_STARTED) {
         let context = RunContext::from_event(event);
         metrics.models.insert(context.model);
         metrics.executors.insert(context.executor);
@@ -257,10 +244,7 @@ fn apply_event_to_metrics(metrics: &mut RunMetrics, event: &HarnessEvent) {
     }
 
     if let Some(classified) = ErrorClassifier::classify_event(event) {
-        *metrics
-            .error_counts_by_class
-            .entry(classified.class)
-            .or_default() += 1;
+        *metrics.error_counts_by_class.entry(classified.class).or_default() += 1;
     }
 }
 
@@ -282,11 +266,7 @@ fn quality_score(metrics: &RunMetrics) -> u8 {
 }
 
 fn count_error(metrics: &RunMetrics, class: ErrorClass) -> u64 {
-    metrics
-        .error_counts_by_class
-        .get(&class)
-        .copied()
-        .unwrap_or(0)
+    metrics.error_counts_by_class.get(&class).copied().unwrap_or(0)
 }
 
 fn string_field(data: &Value, key: &str) -> Option<String> {
@@ -313,13 +293,11 @@ mod tests {
     #[test]
     fn collector_counts_coding_and_error_metrics() {
         let events = vec![
-            HarnessEvent::new(kinds::RUN_STARTED)
-                .with_run_id("r1")
-                .with_data(json!({
-                    "model": "gpt-5.3-codex",
-                    "executor": "openclaw",
-                    "provider_resolved": "http"
-                })),
+            HarnessEvent::new(kinds::RUN_STARTED).with_run_id("r1").with_data(json!({
+                "model": "gpt-5.3-codex",
+                "executor": "openclaw",
+                "provider_resolved": "http"
+            })),
             HarnessEvent::new(kinds::CODING_CYCLE_ACT)
                 .with_run_id("r1")
                 .with_data(json!({"success": true})),
@@ -330,36 +308,28 @@ mod tests {
                 .with_run_id("r1")
                 .with_data(json!({"success": true})),
             HarnessEvent::new(kinds::PROVIDER_REQUEST).with_run_id("r1"),
-            HarnessEvent::new(kinds::PROVIDER_ERROR)
-                .with_run_id("r1")
-                .with_data(json!({
-                    "error": "provider returned non-success status=500",
-                    "error_class": "provider_error"
-                })),
+            HarnessEvent::new(kinds::PROVIDER_ERROR).with_run_id("r1").with_data(json!({
+                "error": "provider returned non-success status=500",
+                "error_class": "provider_error"
+            })),
             HarnessEvent::new(kinds::TOOL_CALL)
                 .with_run_id("r1")
                 .with_data(json!({"tool": "echo"})),
-            HarnessEvent::new(kinds::TOOL_ERROR)
-                .with_run_id("r1")
-                .with_data(json!({
-                    "tool": "echo",
-                    "error": "tool blocked by policy: echo"
-                })),
-            HarnessEvent::new(kinds::GIT_COMMIT)
-                .with_run_id("r1")
-                .with_data(json!({
-                    "success": false,
-                    "skipped": true,
-                    "result": "rejected",
-                    "detail": "commit subject rejected by quality gate"
-                })),
-            HarnessEvent::new(kinds::CODING_COUNTER)
-                .with_run_id("r1")
-                .with_data(json!({
-                    "noop_streak": 2,
-                    "forced_mutation": 1,
-                    "task_advanced": 1
-                })),
+            HarnessEvent::new(kinds::TOOL_ERROR).with_run_id("r1").with_data(json!({
+                "tool": "echo",
+                "error": "tool blocked by policy: echo"
+            })),
+            HarnessEvent::new(kinds::GIT_COMMIT).with_run_id("r1").with_data(json!({
+                "success": false,
+                "skipped": true,
+                "result": "rejected",
+                "detail": "commit subject rejected by quality gate"
+            })),
+            HarnessEvent::new(kinds::CODING_COUNTER).with_run_id("r1").with_data(json!({
+                "noop_streak": 2,
+                "forced_mutation": 1,
+                "task_advanced": 1
+            })),
         ];
 
         let (metrics, rollups) = RunMetricsCollector::collect(&events);
@@ -376,13 +346,7 @@ mod tests {
         assert_eq!(metrics.max_noop_streak, 2);
         assert_eq!(metrics.forced_mutations, 1);
         assert_eq!(metrics.task_advancements, 1);
-        assert_eq!(
-            metrics
-                .error_counts_by_class
-                .get(&ErrorClass::ProviderError)
-                .copied(),
-            Some(1)
-        );
+        assert_eq!(metrics.error_counts_by_class.get(&ErrorClass::ProviderError).copied(), Some(1));
         assert!(metrics.quality_score_100 < 100);
         assert!(rollups
             .by_model_executor_provider

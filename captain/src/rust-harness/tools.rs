@@ -81,9 +81,7 @@ impl Default for ToolRegistry {
 
 impl ToolRegistry {
     pub fn new() -> Self {
-        Self {
-            handlers: HashMap::new(),
-        }
+        Self { handlers: HashMap::new() }
     }
 
     pub fn with_defaults() -> Self {
@@ -164,13 +162,8 @@ impl ToolRegistry {
     where
         F: Fn(Value) -> Result<ToolOutput> + Send + Sync + 'static,
     {
-        self.handlers.insert(
-            spec.name.clone(),
-            RegisteredTool {
-                spec,
-                handler: Box::new(handler),
-            },
-        );
+        self.handlers
+            .insert(spec.name.clone(), RegisteredTool { spec, handler: Box::new(handler) });
     }
 
     pub fn dispatch_with_policy(
@@ -186,19 +179,13 @@ impl ToolRegistry {
     }
 
     pub fn dispatch(&self, name: &str, input: Value) -> Result<ToolOutput> {
-        let registered = self
-            .handlers
-            .get(name)
-            .ok_or_else(|| anyhow!("unknown tool: {name}"))?;
+        let registered = self.handlers.get(name).ok_or_else(|| anyhow!("unknown tool: {name}"))?;
         (registered.handler)(input)
     }
 
     pub fn specs(&self) -> Vec<ToolSpec> {
-        let mut specs = self
-            .handlers
-            .values()
-            .map(|registered| registered.spec.clone())
-            .collect::<Vec<_>>();
+        let mut specs =
+            self.handlers.values().map(|registered| registered.spec.clone()).collect::<Vec<_>>();
         specs.sort_by(|a, b| a.name.cmp(&b.name));
         specs
     }
@@ -229,9 +216,7 @@ mod tests {
     #[test]
     fn dispatches_default_tool() {
         let reg = ToolRegistry::with_defaults();
-        let out = reg
-            .dispatch("echo", serde_json::json!({"message": "hi"}))
-            .unwrap();
+        let out = reg.dispatch("echo", serde_json::json!({"message": "hi"})).unwrap();
         assert!(out.ok);
         assert_eq!(out.content["echo"]["message"], "hi");
     }
@@ -241,9 +226,7 @@ mod tests {
         let reg = ToolRegistry::with_defaults();
         let mut policy = ToolPolicy::default();
         policy.denied_tools.insert("time.now".to_string());
-        let err = reg
-            .dispatch_with_policy("time.now", serde_json::json!({}), &policy)
-            .unwrap_err();
+        let err = reg.dispatch_with_policy("time.now", serde_json::json!({}), &policy).unwrap_err();
         assert!(err.to_string().contains("blocked by policy"));
     }
 }

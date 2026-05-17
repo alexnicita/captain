@@ -100,9 +100,7 @@ pub struct CommandPolicy {
 
 impl CommandPolicy {
     pub fn default_safe() -> Self {
-        Self {
-            allowlisted_commands: ["cargo", "git"].into_iter().map(String::from).collect(),
-        }
+        Self { allowlisted_commands: ["cargo", "git"].into_iter().map(String::from).collect() }
     }
 
     pub fn with_extra_commands(extra: &[String]) -> Self {
@@ -189,21 +187,11 @@ pub struct StageResult {
 
 impl StageResult {
     fn skipped(stage: WorkStage, reason: impl Into<String>) -> Self {
-        Self {
-            stage,
-            success: false,
-            error: Some(reason.into()),
-            commands: Vec::new(),
-        }
+        Self { stage, success: false, error: Some(reason.into()), commands: Vec::new() }
     }
 
     fn passed(stage: WorkStage) -> Self {
-        Self {
-            stage,
-            success: true,
-            error: None,
-            commands: Vec::new(),
-        }
+        Self { stage, success: true, error: None, commands: Vec::new() }
     }
 }
 
@@ -256,27 +244,19 @@ struct AgentCommand {
 
 impl AgentCli {
     fn openclaw() -> Self {
-        Self {
-            kind: AgentCliKind::OpenClaw,
-        }
+        Self { kind: AgentCliKind::OpenClaw }
     }
 
     fn hermes() -> Self {
-        Self {
-            kind: AgentCliKind::Hermes,
-        }
+        Self { kind: AgentCliKind::Hermes }
     }
 
     fn claude() -> Self {
-        Self {
-            kind: AgentCliKind::Claude,
-        }
+        Self { kind: AgentCliKind::Claude }
     }
 
     fn codex() -> Self {
-        Self {
-            kind: AgentCliKind::Codex,
-        }
+        Self { kind: AgentCliKind::Codex }
     }
 
     fn for_preset(preset: ExecutorPreset) -> Option<Self> {
@@ -355,9 +335,8 @@ impl AgentCli {
         session_id: &str,
         timeout_sec: u64,
     ) -> Result<String> {
-        let (payload, _) = self
-            .run_once_with_timeout(repo_path, prompt, session_id, timeout_sec)
-            .await?;
+        let (payload, _) =
+            self.run_once_with_timeout(repo_path, prompt, session_id, timeout_sec).await?;
         Ok(payload)
     }
 
@@ -367,8 +346,7 @@ impl AgentCli {
         prompt: &str,
         session_id: &str,
     ) -> Result<(String, String)> {
-        self.run_once_with_timeout(repo_path, prompt, session_id, AGENT_CLI_CODE_TIMEOUT_SEC)
-            .await
+        self.run_once_with_timeout(repo_path, prompt, session_id, AGENT_CLI_CODE_TIMEOUT_SEC).await
     }
 
     async fn run_once_with_timeout(
@@ -378,10 +356,8 @@ impl AgentCli {
         session_id: &str,
         timeout_sec: u64,
     ) -> Result<(String, String)> {
-        let AgentCommand {
-            mut command,
-            payload_file,
-        } = self.command(repo_path, prompt, session_id, timeout_sec)?;
+        let AgentCommand { mut command, payload_file } =
+            self.command(repo_path, prompt, session_id, timeout_sec)?;
 
         let output = tokio::time::timeout(
             Duration::from_secs(timeout_sec),
@@ -420,11 +396,7 @@ impl AgentCli {
         let command = match self.kind {
             AgentCliKind::OpenClaw => {
                 let mut command = Command::new("openclaw");
-                command
-                    .arg("agent")
-                    .arg("--local")
-                    .arg("--agent")
-                    .arg("main");
+                command.arg("agent").arg("--local").arg("--agent").arg("main");
                 if let Some(model) = self.openclaw_model_override() {
                     command.arg("--model").arg(model);
                 }
@@ -438,10 +410,7 @@ impl AgentCli {
                     .arg("--json")
                     .arg("--message")
                     .arg(prompt);
-                AgentCommand {
-                    command,
-                    payload_file: None,
-                }
+                AgentCommand { command, payload_file: None }
             }
             AgentCliKind::Hermes => {
                 let toolsets = std::env::var("CAPTAIN_HERMES_TOOLSETS")
@@ -466,15 +435,8 @@ impl AgentCli {
                 if let Some(model) = self.hermes_model_override() {
                     command.arg("--model").arg(model);
                 }
-                command
-                    .arg("--pass-session-id")
-                    .arg("--yolo")
-                    .arg("-q")
-                    .arg(prompt);
-                AgentCommand {
-                    command,
-                    payload_file: None,
-                }
+                command.arg("--pass-session-id").arg("--yolo").arg("-q").arg(prompt);
+                AgentCommand { command, payload_file: None }
             }
             AgentCliKind::Claude => {
                 let permission_mode = env_trimmed_or("CAPTAIN_CLAUDE_PERMISSION_MODE", "dontAsk");
@@ -498,10 +460,7 @@ impl AgentCli {
                     command.arg("--model").arg(model);
                 }
                 command.arg(prompt);
-                AgentCommand {
-                    command,
-                    payload_file: None,
-                }
+                AgentCommand { command, payload_file: None }
             }
             AgentCliKind::Codex => {
                 let payload_file = agent_payload_file(repo_path, self.name(), session_id)?;
@@ -539,10 +498,7 @@ impl AgentCli {
                     .arg("--output-last-message")
                     .arg(&payload_file)
                     .arg(prompt);
-                AgentCommand {
-                    command,
-                    payload_file: Some(payload_file),
-                }
+                AgentCommand { command, payload_file: Some(payload_file) }
             }
         };
         Ok(command)
@@ -649,12 +605,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         return Err(anyhow!("repo path does not exist or is not a directory"));
     }
 
-    let user_prompt = args
-        .user_prompt
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(ToOwned::to_owned);
+    let user_prompt =
+        args.user_prompt.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(ToOwned::to_owned);
 
     let output_path = resolve_output_file(&repo_path, args.cycle_output_file.as_deref())?;
     let runtime_log_path = resolve_output_file(&repo_path, args.runtime_log_file.as_deref())?;
@@ -689,12 +641,10 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let sink = EventSink::new(&args.event_log_path)?;
     let _repo_lock = match acquire_repo_run_lock(&lock_path) {
         Ok(lock) => {
-            sink.emit(
-                &HarnessEvent::new(kinds::CODING_LOCK_ACQUIRED).with_data(json!({
-                    "repo": repo_path.display().to_string(),
-                    "lock_file": lock_path.display().to_string(),
-                })),
-            )?;
+            sink.emit(&HarnessEvent::new(kinds::CODING_LOCK_ACQUIRED).with_data(json!({
+                "repo": repo_path.display().to_string(),
+                "lock_file": lock_path.display().to_string(),
+            })))?;
             lock
         }
         Err(err) => {
@@ -703,16 +653,14 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                 repo_path.display(),
                 lock_path.display()
             );
-            sink.emit(
-                &HarnessEvent::new(kinds::CODING_LOCK_EXISTS).with_data(json!({
-                    "repo": repo_path.display().to_string(),
-                    "lock_file": lock_path.display().to_string(),
-                    "error": err.to_string(),
-                    "refusal": refusal,
-                    "fail_fast": true,
-                    "exit_code": 1,
-                })),
-            )?;
+            sink.emit(&HarnessEvent::new(kinds::CODING_LOCK_EXISTS).with_data(json!({
+                "repo": repo_path.display().to_string(),
+                "lock_file": lock_path.display().to_string(),
+                "error": err.to_string(),
+                "refusal": refusal,
+                "fail_fast": true,
+                "exit_code": 1,
+            })))?;
             return Err(anyhow!(refusal));
         }
     };
@@ -746,28 +694,26 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         "run_lock_file": lock_path.display().to_string(),
     })))?;
 
-    sink.emit(
-        &HarnessEvent::new(kinds::CODING_RUN_STARTED).with_data(json!({
-            "repo": repo_path.display().to_string(),
-            "duration_sec": args.duration_sec,
-            "executor": executor.name(),
-            "provider_requested": provider_requested_kind.clone(),
-            "provider_resolved": provider_resolved_kind.clone(),
-            "provider_fallback_reason": provider_fallback_reason.clone(),
-            "model": args.provider_cfg.model.clone(),
-            "model_profile": model_profile.clone(),
-            "deadline_epoch": gate.deadline_epoch(),
-            "prompt_provided": user_prompt.is_some(),
-            "user_prompt": user_prompt.clone(),
-            "supercycle": args.supercycle,
-            "research_budget_sec": args.research_budget_sec,
-            "planning_budget_sec": args.planning_budget_sec,
-            "require_commit_each_cycle": args.require_commit_each_cycle,
-            "noop_streak_limit": noop_streak_limit,
-            "conformance_interval_unchanged": conformance_interval_unchanged,
-            "run_session_id": run_session_id,
-        })),
-    )?;
+    sink.emit(&HarnessEvent::new(kinds::CODING_RUN_STARTED).with_data(json!({
+        "repo": repo_path.display().to_string(),
+        "duration_sec": args.duration_sec,
+        "executor": executor.name(),
+        "provider_requested": provider_requested_kind.clone(),
+        "provider_resolved": provider_resolved_kind.clone(),
+        "provider_fallback_reason": provider_fallback_reason.clone(),
+        "model": args.provider_cfg.model.clone(),
+        "model_profile": model_profile.clone(),
+        "deadline_epoch": gate.deadline_epoch(),
+        "prompt_provided": user_prompt.is_some(),
+        "user_prompt": user_prompt.clone(),
+        "supercycle": args.supercycle,
+        "research_budget_sec": args.research_budget_sec,
+        "planning_budget_sec": args.planning_budget_sec,
+        "require_commit_each_cycle": args.require_commit_each_cycle,
+        "noop_streak_limit": noop_streak_limit,
+        "conformance_interval_unchanged": conformance_interval_unchanged,
+        "run_session_id": run_session_id,
+    })))?;
 
     if let Some(agent_cli) = agent_cli.as_ref() {
         let bootstrap_prompt = format!(
@@ -788,11 +734,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     let mut cycles_succeeded = 0u64;
     let mut cycles_failed = 0u64;
     let mut next_heartbeat_epoch = start_epoch;
-    let planning_window_sec = if args.supercycle {
-        ((args.duration_sec as f64) * 0.20).ceil() as u64
-    } else {
-        0
-    };
+    let planning_window_sec =
+        if args.supercycle { ((args.duration_sec as f64) * 0.20).ceil() as u64 } else { 0 };
     let mut noop_streak = 0u64;
     let mut unchanged_since_conformance = 0u64;
     let mut counters = EventCounters::default();
@@ -803,16 +746,14 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
     while gate.is_active_at(now_unix()) {
         let now = now_unix();
         if now >= next_heartbeat_epoch {
-            sink.emit(
-                &HarnessEvent::new(kinds::CODING_HEARTBEAT).with_data(json!({
-                    "elapsed_sec": gate.elapsed_sec_at(now),
-                    "remaining_sec": gate.remaining_sec_at(now),
-                    "deadline_epoch": gate.deadline_epoch(),
-                    "cycles_total": cycles_total,
-                    "supercycle": args.supercycle,
-                    "prompt_provided": user_prompt.is_some(),
-                })),
-            )?;
+            sink.emit(&HarnessEvent::new(kinds::CODING_HEARTBEAT).with_data(json!({
+                "elapsed_sec": gate.elapsed_sec_at(now),
+                "remaining_sec": gate.remaining_sec_at(now),
+                "deadline_epoch": gate.deadline_epoch(),
+                "cycles_total": cycles_total,
+                "supercycle": args.supercycle,
+                "prompt_provided": user_prompt.is_some(),
+            })))?;
             next_heartbeat_epoch = now.saturating_add(args.heartbeat_sec);
         }
 
@@ -821,9 +762,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         let cycle_start = Instant::now();
 
         sink.emit(
-            &HarnessEvent::new(kinds::TASK_STARTED)
-                .with_task_id(cycle_id.clone())
-                .with_data(json!({
+            &HarnessEvent::new(kinds::TASK_STARTED).with_task_id(cycle_id.clone()).with_data(
+                json!({
                     "mode": "coding",
                     "cycle": cycles_total,
                     "executor": executor.name(),
@@ -831,7 +771,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "supercycle": args.supercycle,
                     "prompt_provided": user_prompt.is_some(),
                     "user_prompt": user_prompt.clone(),
-                })),
+                }),
+            ),
         )?;
 
         sink.emit(
@@ -961,10 +902,7 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
             result: if act_result.success {
                 "feature phase completed".to_string()
             } else {
-                act_result
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| "feature phase failed".to_string())
+                act_result.error.clone().unwrap_or_else(|| "feature phase failed".to_string())
             },
         };
         emit_phase_event(
@@ -1275,9 +1213,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
 
         let cycle_runtime_ms = cycle_start.elapsed().as_millis() as u64;
         sink.emit(
-            &HarnessEvent::new(kinds::TASK_FINISHED)
-                .with_task_id(cycle_id.clone())
-                .with_data(json!({
+            &HarnessEvent::new(kinds::TASK_FINISHED).with_task_id(cycle_id.clone()).with_data(
+                json!({
                     "mode": "coding",
                     "cycle": cycles_total,
                     "reason": if commit_watchdog_breached {
@@ -1290,7 +1227,8 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
                     "runtime_ms": cycle_runtime_ms,
                     "commit_watchdog_sec": COMMIT_WATCHDOG_SEC,
                     "seconds_since_last_commit": now_unix().saturating_sub(last_commit_ok_epoch),
-                })),
+                }),
+            ),
         )?;
 
         sink.emit(
@@ -1344,16 +1282,14 @@ pub async fn run_coding_loop(args: CodingRunArgs) -> Result<CodingRunSummary> {
         let _ = write_postcoding_task_refresh(&repo_path, cycles_total, user_prompt.as_deref());
     }
 
-    sink.emit(
-        &HarnessEvent::new(kinds::CODING_RUN_FINISHED).with_data(json!({
-            "cycles_total": cycles_total,
-            "cycles_succeeded": cycles_succeeded,
-            "cycles_failed": cycles_failed,
-            "elapsed_sec": elapsed_sec,
-            "duration_sec": args.duration_sec,
-            "deadline_epoch": gate.deadline_epoch(),
-        })),
-    )?;
+    sink.emit(&HarnessEvent::new(kinds::CODING_RUN_FINISHED).with_data(json!({
+        "cycles_total": cycles_total,
+        "cycles_succeeded": cycles_succeeded,
+        "cycles_failed": cycles_failed,
+        "elapsed_sec": elapsed_sec,
+        "duration_sec": args.duration_sec,
+        "deadline_epoch": gate.deadline_epoch(),
+    })))?;
 
     sink.emit(&HarnessEvent::new(kinds::RUN_FINISHED).with_data(json!({
         "mode": "coding",
@@ -1383,21 +1319,9 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
         ExecutorPreset::Cargo => {
             let defaults = default_cargo_commands();
             (
-                if args.plan_cmd.is_empty() {
-                    defaults.plan
-                } else {
-                    args.plan_cmd.clone()
-                },
-                if args.act_cmd.is_empty() {
-                    defaults.act
-                } else {
-                    args.act_cmd.clone()
-                },
-                if args.verify_cmd.is_empty() {
-                    defaults.verify
-                } else {
-                    args.verify_cmd.clone()
-                },
+                if args.plan_cmd.is_empty() { defaults.plan } else { args.plan_cmd.clone() },
+                if args.act_cmd.is_empty() { defaults.act } else { args.act_cmd.clone() },
+                if args.verify_cmd.is_empty() { defaults.verify } else { args.verify_cmd.clone() },
                 "cargo",
             )
         }
@@ -1425,37 +1349,21 @@ fn build_executor(args: &CodingRunArgs) -> Result<Box<dyn WorkExecutor>> {
         | ExecutorPreset::Codex => {
             let agent_cli = AgentCli::for_preset(args.preset)
                 .expect("agent executor preset must resolve to agent cli");
-            policy
-                .allowlisted_commands
-                .insert(agent_cli.binary().to_string());
+            policy.allowlisted_commands.insert(agent_cli.binary().to_string());
             (
                 if args.plan_cmd.is_empty() {
                     vec!["git status --short".to_string()]
                 } else {
                     args.plan_cmd.clone()
                 },
-                if args.act_cmd.is_empty() {
-                    Vec::new()
-                } else {
-                    args.act_cmd.clone()
-                },
-                if args.verify_cmd.is_empty() {
-                    Vec::new()
-                } else {
-                    args.verify_cmd.clone()
-                },
+                if args.act_cmd.is_empty() { Vec::new() } else { args.act_cmd.clone() },
+                if args.verify_cmd.is_empty() { Vec::new() } else { args.verify_cmd.clone() },
                 agent_cli.name(),
             )
         }
     };
 
-    let executor = ShellWorkExecutor {
-        policy,
-        plan_cmd,
-        act_cmd,
-        verify_cmd,
-        label,
-    };
+    let executor = ShellWorkExecutor { policy, plan_cmd, act_cmd, verify_cmd, label };
 
     Ok(Box::new(executor))
 }
@@ -1465,18 +1373,10 @@ fn merge_stage_results(stage: WorkStage, first: StageResult, second: StageResult
     commands.extend(second.commands);
 
     let success = first.success && second.success;
-    let error = if first.success {
-        second.error.or(first.error)
-    } else {
-        first.error.or(second.error)
-    };
+    let error =
+        if first.success { second.error.or(first.error) } else { first.error.or(second.error) };
 
-    StageResult {
-        stage,
-        success,
-        error,
-        commands,
-    }
+    StageResult { stage, success, error, commands }
 }
 
 fn should_run_codegen_stage(agent_cli: Option<&AgentCli>) -> bool {
@@ -1546,18 +1446,12 @@ async fn run_codegen_stage(
     for attempt in 1..=CODEGEN_MAX_ATTEMPTS {
         let attempt_task = build_codegen_attempt_task(&base_task, attempt, last_error.as_deref());
 
-        match engine
-            .run_cycle(&ctx.repo_path, &attempt_task, &repo_snapshot)
-            .await
-        {
+        match engine.run_cycle(&ctx.repo_path, &attempt_task, &repo_snapshot).await {
             Ok(report) => {
                 let changed_files = report.diff_applied.changed_files.clone();
                 let success = report.diff_applied.applied && !changed_files.is_empty();
                 let detail = if success {
-                    format!(
-                        "code engine applied patch touching {} files",
-                        changed_files.len()
-                    )
+                    format!("code engine applied patch touching {} files", changed_files.len())
                 } else {
                     format!(
                         "code-diff engine produced no applied file changes: {}",
@@ -1586,11 +1480,7 @@ async fn run_codegen_stage(
                     exit_code: Some(if success { 0 } else { 1 }),
                     duration_ms: stage_start.elapsed().as_millis() as u64,
                     stdout_tail: truncate_tail(&payload.to_string()),
-                    stderr_tail: if success {
-                        String::new()
-                    } else {
-                        truncate_tail(&detail)
-                    },
+                    stderr_tail: if success { String::new() } else { truncate_tail(&detail) },
                     error: if success { None } else { Some(detail.clone()) },
                 });
 
@@ -1740,38 +1630,33 @@ async fn run_agent_cli_codegen_stage(
         let prompt_path =
             write_agent_cli_prompt_artifact(agent_cli, &ctx.repo_path, ctx.cycle, attempt, &prompt)
                 .ok();
-        let (payload, stderr_text) = match agent_cli
-            .run_code_once(&ctx.repo_path, &prompt, &ctx.run_session_id)
-            .await
-        {
-            Ok(result) => result,
-            Err(err) => {
-                let message = err.to_string();
-                last_error = Some(message.clone());
-                attempts.push(CommandExecution {
-                    stage: WorkStage::Act,
-                    command: format!(
-                        "{} (attempt {attempt}/{AGENT_CLI_ATTEMPTS_PER_CYCLE})",
-                        agent_cli.command_label("json edits")
-                    ),
-                    argv: agent_argv.clone(),
-                    success: false,
-                    exit_code: Some(1),
-                    duration_ms: stage_start.elapsed().as_millis() as u64,
-                    stdout_tail: String::new(),
-                    stderr_tail: truncate_tail(&message),
-                    error: Some(message),
-                });
-                continue;
-            }
-        };
+        let (payload, stderr_text) =
+            match agent_cli.run_code_once(&ctx.repo_path, &prompt, &ctx.run_session_id).await {
+                Ok(result) => result,
+                Err(err) => {
+                    let message = err.to_string();
+                    last_error = Some(message.clone());
+                    attempts.push(CommandExecution {
+                        stage: WorkStage::Act,
+                        command: format!(
+                            "{} (attempt {attempt}/{AGENT_CLI_ATTEMPTS_PER_CYCLE})",
+                            agent_cli.command_label("json edits")
+                        ),
+                        argv: agent_argv.clone(),
+                        success: false,
+                        exit_code: Some(1),
+                        duration_ms: stage_start.elapsed().as_millis() as u64,
+                        stdout_tail: String::new(),
+                        stderr_tail: truncate_tail(&message),
+                        error: Some(message),
+                    });
+                    continue;
+                }
+            };
 
         let proposal = match extract_json_edits_payload(&payload).map(|(paths, sentinel)| {
             CodeDiffProposal {
-                summary: format!(
-                    "{agent_name} agent json edits touching {} files",
-                    paths.len()
-                ),
+                summary: format!("{agent_name} agent json edits touching {} files", paths.len()),
                 unified_diff: sentinel,
                 touched_files: paths,
             }
@@ -1841,10 +1726,7 @@ async fn run_agent_cli_codegen_stage(
                 apply.changed_files.len()
             )
         } else {
-            format!(
-                "{agent_name} agent returned unapplied/empty json edits: {}",
-                apply.detail
-            )
+            format!("{agent_name} agent returned unapplied/empty json edits: {}", apply.detail)
         };
 
         attempts.push(CommandExecution {
@@ -1865,11 +1747,7 @@ async fn run_agent_cli_codegen_stage(
                 })
                 .to_string(),
             ),
-            stderr_tail: if success {
-                String::new()
-            } else {
-                truncate_tail(&detail)
-            },
+            stderr_tail: if success { String::new() } else { truncate_tail(&detail) },
             error: if success { None } else { Some(detail.clone()) },
         });
 
@@ -1934,14 +1812,8 @@ async fn run_parallel_research_once(
     let mut out = String::from("# PARALLEL_RESEARCH\n\n");
     if let Some(results) = parsed.get("results").and_then(Value::as_array) {
         for (idx, item) in results.iter().enumerate() {
-            let title = item
-                .get("title")
-                .and_then(Value::as_str)
-                .unwrap_or("(untitled)");
-            let url = item
-                .get("url")
-                .and_then(Value::as_str)
-                .unwrap_or("(no url)");
+            let title = item.get("title").and_then(Value::as_str).unwrap_or("(untitled)");
+            let url = item.get("url").and_then(Value::as_str).unwrap_or("(no url)");
             let snippet = item.get("snippet").and_then(Value::as_str).unwrap_or("");
             out.push_str(&format!(
                 "## Result {}: {}\n{}\n{}\n\n",
@@ -2121,10 +1993,8 @@ fn write_agent_cli_prompt_artifact(
 ) -> Result<String> {
     let dir = repo_path.join(".harness/supercycle/prompts");
     fs::create_dir_all(&dir).context("failed to create agent prompt artifact dir")?;
-    let path = dir.join(format!(
-        "cycle-{cycle:04}-{}-attempt-{attempt}.prompt.txt",
-        agent_cli.name()
-    ));
+    let path =
+        dir.join(format!("cycle-{cycle:04}-{}-attempt-{attempt}.prompt.txt", agent_cli.name()));
     fs::write(&path, prompt).context("failed to write agent prompt artifact")?;
     Ok(path.display().to_string())
 }
@@ -2153,17 +2023,11 @@ fn extract_openclaw_payload_text(stdout: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(stdout).ok()?;
     let payloads = value.get("payloads")?.as_array()?;
     let first = payloads.first()?;
-    first
-        .get("text")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+    first.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
 fn env_trimmed(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    std::env::var(name).ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
 }
 
 fn env_trimmed_or(name: &str, default: &str) -> String {
@@ -2215,13 +2079,7 @@ fn agent_payload_file(repo_path: &Path, agent_name: &str, session_id: &str) -> R
 fn sanitize_agent_artifact_name(input: &str) -> String {
     let sanitized = input
         .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '-'
-            }
-        })
+        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' { ch } else { '-' })
         .collect::<String>();
     if sanitized.is_empty() {
         "session".to_string()
@@ -2257,9 +2115,7 @@ fn extract_json_edits_payload(message: &str) -> Option<(Vec<String>, String)> {
     if acceptance_checks.is_empty() {
         return None;
     }
-    if !acceptance_checks
-        .iter()
-        .all(|v| v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false))
+    if !acceptance_checks.iter().all(|v| v.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false))
     {
         return None;
     }
@@ -2346,8 +2202,7 @@ fn build_codegen_attempt_task(
                 .to_string(),
         );
         if let Some(err) = previous_error {
-            task.constraints
-                .push(format!("Previous attempt failed with: {err}"));
+            task.constraints.push(format!("Previous attempt failed with: {err}"));
         }
     }
 
@@ -2416,11 +2271,7 @@ async fn build_repo_snapshot(
     let diff_stat = capture_git_output(repo_path, &["diff", "--stat"]).await?;
     let tracked_files = capture_git_output(repo_path, &["ls-files"]).await?;
 
-    let tracked_preview = tracked_files
-        .lines()
-        .take(80)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let tracked_preview = tracked_files.lines().take(80).collect::<Vec<_>>().join("\n");
 
     Ok(format!(
         "branch={branch}\nhead={head}\nselected_task={}\nselected_source={}\nuser_prompt={}\nstatus:\n{}\ndiff_stat:\n{}\ntracked_files:\n{}",
@@ -2454,11 +2305,7 @@ async fn capture_git_output(repo_path: &Path, args: &[&str]) -> Result<String> {
         return Err(anyhow!(
             "git {} failed: {}",
             args.join(" "),
-            if stderr.is_empty() {
-                format!("exit status {}", output.status)
-            } else {
-                stderr
-            }
+            if stderr.is_empty() { format!("exit status {}", output.status) } else { stderr }
         ));
     }
 
@@ -2475,10 +2322,7 @@ struct DefaultCommands {
 fn default_cargo_commands() -> DefaultCommands {
     DefaultCommands {
         plan: vec!["git status --short".to_string()],
-        act: vec![
-            "cargo fmt --all".to_string(),
-            "cargo check --all-targets".to_string(),
-        ],
+        act: vec!["cargo fmt --all".to_string(), "cargo check --all-targets".to_string()],
         verify: vec!["cargo test --all-targets".to_string()],
     }
 }
@@ -2488,11 +2332,8 @@ fn derive_verify_commands(ctx: &CycleContext) -> Vec<String> {
 
     if let Some(task) = ctx.selected_task.as_ref() {
         if task.source.starts_with("src/") {
-            let module = task
-                .source
-                .trim_start_matches("src/")
-                .trim_end_matches(".rs")
-                .replace('/', "::");
+            let module =
+                task.source.trim_start_matches("src/").trim_end_matches(".rs").replace('/', "::");
             if !module.is_empty() {
                 commands.push(format!("cargo test --all-targets {module}"));
             }
@@ -2544,9 +2385,7 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, true, None, None, "skipped", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, false, true, None, None, "skipped", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2570,9 +2409,7 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, true, true, None, None, "skipped", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, true, true, None, None, "skipped", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2668,10 +2505,7 @@ async fn run_cycle_hooks(
             detail: if pull_result.success {
                 "git pull merged cleanly".to_string()
             } else if pull_conflict {
-                format!(
-                    "git pull conflict; unresolved files: {}",
-                    conflict_files.join(", ")
-                )
+                format!("git pull conflict; unresolved files: {}", conflict_files.join(", "))
             } else {
                 format!("git pull failed: {}", summarize_error(&pull_result))
             },
@@ -2730,9 +2564,7 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, true, true, None, None, "skipped", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, true, true, None, None, "skipped", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2757,9 +2589,7 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, true, true, None, None, "skipped", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, true, true, None, None, "skipped", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2783,9 +2613,7 @@ async fn run_cycle_hooks(
             skipped: false,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, false, None, None, "failed", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, false, false, None, None, "failed", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2812,9 +2640,7 @@ async fn run_cycle_hooks(
             skipped: false,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, false, None, None, "failed", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, false, false, None, None, "failed", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2839,9 +2665,7 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, true, None, None, "rejected", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, false, true, None, None, "rejected", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2867,9 +2691,7 @@ async fn run_cycle_hooks(
             skipped: true,
             detail: detail.clone(),
         });
-        emit_git_commit_event(
-            sink, cycle_id, cycle, false, true, None, None, "rejected", &detail,
-        )?;
+        emit_git_commit_event(sink, cycle_id, cycle, false, true, None, None, "rejected", &detail)?;
         emit_git_push_event(
             sink,
             cycle_id,
@@ -2894,10 +2716,7 @@ async fn run_cycle_hooks(
     if commit_subject_is_generic(&subject)
         || !subject_mentions_changed_scope(&subject, &staged_meaningful)
     {
-        let detail = format!(
-            "commit subject rejected by quality gate: '{}'",
-            subject.trim()
-        );
+        let detail = format!("commit subject rejected by quality gate: '{}'", subject.trim());
         hooks.push(HookResult {
             name: "commit".to_string(),
             success: false,
@@ -2986,11 +2805,7 @@ async fn run_cycle_hooks(
         false,
         Some(commit_subject.as_str()),
         Some(commit_message.as_str()),
-        if commit_result.success {
-            "ok"
-        } else {
-            "failed"
-        },
+        if commit_result.success { "ok" } else { "failed" },
         &commit_detail,
     )?;
     if !commit_result.success {
@@ -3094,10 +2909,7 @@ async fn run_commit_watchdog_recovery(
         run_session_id: format!("harness-run-watchdog-{cycle}"),
     };
 
-    let commit_cmd = format!(
-        "git commit --allow-empty -m {}",
-        shell_words::quote(&message)
-    );
+    let commit_cmd = format!("git commit --allow-empty -m {}", shell_words::quote(&message));
     let commit_result = execute_command_line(WorkStage::Act, &commit_cmd, &hook_ctx, policy).await;
     let commit_detail = if commit_result.success {
         "git commit --allow-empty ok".to_string()
@@ -3113,11 +2925,7 @@ async fn run_commit_watchdog_recovery(
         false,
         Some(subject.as_str()),
         Some(message.as_str()),
-        if commit_result.success {
-            "ok"
-        } else {
-            "failed"
-        },
+        if commit_result.success { "ok" } else { "failed" },
         &commit_detail,
     )?;
 
@@ -3199,9 +3007,7 @@ fn emit_git_commit_event(
     }
 
     sink.emit(
-        &HarnessEvent::new(kinds::GIT_COMMIT)
-            .with_task_id(cycle_id.to_string())
-            .with_data(data),
+        &HarnessEvent::new(kinds::GIT_COMMIT).with_task_id(cycle_id.to_string()).with_data(data),
     )
 }
 
@@ -3233,9 +3039,7 @@ fn emit_git_push_event(
     }
 
     sink.emit(
-        &HarnessEvent::new(kinds::GIT_PUSH)
-            .with_task_id(cycle_id.to_string())
-            .with_data(data),
+        &HarnessEvent::new(kinds::GIT_PUSH).with_task_id(cycle_id.to_string()).with_data(data),
     )
 }
 
@@ -3272,11 +3076,7 @@ async fn run_supercycle_planning(
         let timeout_sec = research_budget_sec.clamp(30, 600);
         let fallback_agent = agent_cli.copied().unwrap_or_else(AgentCli::openclaw);
         let fallback_agent_name = fallback_agent.name();
-        if std::env::var("PARALLEL_API_KEY")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-            .is_some()
-        {
+        if std::env::var("PARALLEL_API_KEY").ok().filter(|s| !s.trim().is_empty()).is_some() {
             match run_parallel_research_once(repo_path, &research_prompt, timeout_sec).await {
                 Ok(text) if !text.trim().is_empty() => text,
                 Ok(_) => "(parallel research returned empty output)".to_string(),
@@ -3385,14 +3185,8 @@ fn write_postcoding_task_refresh(
     out.push_str(&format!("Prompt context: {prompt}\n\n"));
     out.push_str("## Next coding backlog\n");
     for path in src_files.iter().take(30) {
-        let rel = path
-            .strip_prefix(repo_path)
-            .unwrap_or(path)
-            .display()
-            .to_string();
-        out.push_str(&format!(
-            "- [ ] Add one reliability/test improvement in `{rel}`\n"
-        ));
+        let rel = path.strip_prefix(repo_path).unwrap_or(path).display().to_string();
+        out.push_str(&format!("- [ ] Add one reliability/test improvement in `{rel}`\n"));
     }
     fs::write(followup, out)?;
     Ok(())
@@ -3441,10 +3235,7 @@ async fn run_architecture_phase(
                 selected_task.title, selected_task.source
             )
         } else {
-            format!(
-                "selected ranked task '{}' from {}",
-                selected_task.title, selected_task.source
-            )
+            format!("selected ranked task '{}' from {}", selected_task.title, selected_task.source)
         },
     })
 }
@@ -3613,23 +3404,21 @@ async fn staged_file_names(repo_path: &Path) -> Vec<String> {
 }
 
 async fn pending_file_names(repo_path: &Path) -> Vec<String> {
-    let output = Command::new("git")
-        .arg("status")
-        .arg("--porcelain")
-        .current_dir(repo_path)
-        .output()
-        .await;
+    let output =
+        Command::new("git").arg("status").arg("--porcelain").current_dir(repo_path).output().await;
 
     match output {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
             .lines()
-            .filter_map(|line| {
-                if line.len() > 3 {
-                    Some(line[3..].trim().to_string())
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |line| {
+                    if line.len() > 3 {
+                        Some(line[3..].trim().to_string())
+                    } else {
+                        None
+                    }
+                },
+            )
             .filter(|s| !s.is_empty())
             .collect(),
         _ => Vec::new(),
@@ -3638,9 +3427,7 @@ async fn pending_file_names(repo_path: &Path) -> Vec<String> {
 
 fn path_starts_with_component(path: &str, component: &str) -> bool {
     path == component
-        || path
-            .strip_prefix(component)
-            .is_some_and(|rest| rest.starts_with('/'))
+        || path.strip_prefix(component).is_some_and(|rest| rest.starts_with('/'))
         || path.contains(&format!("/{component}/"))
         || path.ends_with(&format!("/{component}"))
 }
@@ -3650,24 +3437,14 @@ fn is_internal_artifact_path(path: &str) -> bool {
 }
 
 fn filter_meaningful_scope_files(files: &[String]) -> Vec<String> {
-    files
-        .iter()
-        .filter(|f| !is_internal_artifact_path(f))
-        .cloned()
-        .collect()
+    files.iter().filter(|f| !is_internal_artifact_path(f)).cloned().collect()
 }
 
 async fn unstage_internal_artifacts(
     ctx: &CycleContext,
     policy: &CommandPolicy,
 ) -> CommandExecution {
-    execute_command_line(
-        WorkStage::Act,
-        "git reset -q HEAD -- .harness runs",
-        ctx,
-        policy,
-    )
-    .await
+    execute_command_line(WorkStage::Act, "git reset -q HEAD -- .harness runs", ctx, policy).await
 }
 
 fn commit_subject_is_generic(subject: &str) -> bool {
@@ -3777,14 +3554,8 @@ async fn passes_commit_diff_rubric(
     let mut touched = 0u64;
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let mut parts = line.split_whitespace();
-        let add = parts
-            .next()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        let del = parts
-            .next()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
+        let add = parts.next().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        let del = parts.next().and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
         touched = touched.saturating_add(add + del);
     }
 
@@ -3800,36 +3571,22 @@ async fn passes_commit_diff_rubric(
         }
     }
 
-    staged_files
-        .iter()
-        .any(|f| path_starts_with_component(f, "src"))
+    staged_files.iter().any(|f| path_starts_with_component(f, "src"))
 }
 
 async fn infer_commit_kind(repo_path: &Path, user_prompt: Option<&str>) -> String {
     let prompt_lc = user_prompt.unwrap_or_default().to_lowercase();
 
-    if ["fix", "bug", "error", "regression", "hotfix"]
-        .iter()
-        .any(|k| prompt_lc.contains(k))
-    {
+    if ["fix", "bug", "error", "regression", "hotfix"].iter().any(|k| prompt_lc.contains(k)) {
         return "fix".to_string();
     }
-    if ["test", "tests", "coverage"]
-        .iter()
-        .any(|k| prompt_lc.contains(k))
-    {
+    if ["test", "tests", "coverage"].iter().any(|k| prompt_lc.contains(k)) {
         return "test".to_string();
     }
-    if ["refactor", "cleanup", "clean up"]
-        .iter()
-        .any(|k| prompt_lc.contains(k))
-    {
+    if ["refactor", "cleanup", "clean up"].iter().any(|k| prompt_lc.contains(k)) {
         return "refactor".to_string();
     }
-    if ["docs", "readme", "runbook", "documentation"]
-        .iter()
-        .any(|k| prompt_lc.contains(k))
-    {
+    if ["docs", "readme", "runbook", "documentation"].iter().any(|k| prompt_lc.contains(k)) {
         return "docs".to_string();
     }
 
@@ -3854,10 +3611,7 @@ async fn infer_commit_kind(repo_path: &Path, user_prompt: Option<&str>) -> Strin
     if !files.is_empty() && files.iter().all(|f| f.ends_with(".md")) {
         return "docs".to_string();
     }
-    if files
-        .iter()
-        .any(|f| f.contains("test") || f.contains("fixtures/"))
-    {
+    if files.iter().any(|f| f.contains("test") || f.contains("fixtures/")) {
         return "test".to_string();
     }
     if files.iter().any(|f| f.starts_with("src/")) {
@@ -3952,21 +3706,11 @@ async fn run_stage_commands(
         let error = execution.error.clone();
         runs.push(execution);
         if !success {
-            return StageResult {
-                stage,
-                success: false,
-                error,
-                commands: runs,
-            };
+            return StageResult { stage, success: false, error, commands: runs };
         }
     }
 
-    StageResult {
-        stage,
-        success: true,
-        error: None,
-        commands: runs,
-    }
+    StageResult { stage, success: true, error: None, commands: runs }
 }
 
 async fn execute_command_line(
@@ -4020,12 +3764,7 @@ async fn execute_command_line(
             stderr_tail: String::new(),
             error: Some(format!(
                 "command blocked by policy: {executable} (allowlist: {})",
-                policy
-                    .allowlisted_commands
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(",")
+                policy.allowlisted_commands.iter().cloned().collect::<Vec<_>>().join(",")
             )),
         };
     }
@@ -4040,9 +3779,7 @@ async fn execute_command_line(
         .env("OPENCLAW_CODING_STAGE", stage_label(stage));
 
     if let Some(prompt) = ctx.user_prompt.as_deref() {
-        command_handle
-            .env("HARNESS_USER_PROMPT", prompt)
-            .env("OPENCLAW_USER_PROMPT", prompt);
+        command_handle.env("HARNESS_USER_PROMPT", prompt).env("OPENCLAW_USER_PROMPT", prompt);
     }
 
     let output = command_handle.output().await;
@@ -4089,11 +3826,7 @@ fn truncate_tail(content: &str) -> String {
     if content.chars().count() <= OUTPUT_TAIL_LIMIT {
         return content.to_string();
     }
-    let mut chars = content
-        .chars()
-        .rev()
-        .take(OUTPUT_TAIL_LIMIT)
-        .collect::<Vec<_>>();
+    let mut chars = content.chars().rev().take(OUTPUT_TAIL_LIMIT).collect::<Vec<_>>();
     chars.reverse();
     format!("...{}", chars.into_iter().collect::<String>())
 }
@@ -4113,11 +3846,7 @@ fn resolve_output_file(repo_path: &Path, output_file: Option<&str>) -> Result<Op
     };
 
     let raw = PathBuf::from(path);
-    let resolved = if raw.is_absolute() {
-        raw
-    } else {
-        repo_path.join(raw)
-    };
+    let resolved = if raw.is_absolute() { raw } else { repo_path.join(raw) };
 
     if let Some(parent) = resolved.parent() {
         fs::create_dir_all(parent)?;
@@ -4161,9 +3890,7 @@ fn acquire_repo_run_lock(path: &Path) -> Result<RepoRunLock> {
         .open(path)
         .with_context(|| format!("run lock exists at {}", path.display()))?;
 
-    Ok(RepoRunLock {
-        path: path.to_path_buf(),
-    })
+    Ok(RepoRunLock { path: path.to_path_buf() })
 }
 
 fn load_progress_memory(path: &Path) -> Result<TaskProgressMemory> {
@@ -4215,31 +3942,19 @@ mod tests {
     fn agent_cli_maps_agent_presets_to_shared_adapter() {
         let openclaw = AgentCli::for_preset(ExecutorPreset::OpenClaw).unwrap();
         assert_eq!(openclaw.name(), "openclaw");
-        assert_eq!(
-            openclaw.argv_preview(),
-            vec!["openclaw".to_string(), "agent".to_string()]
-        );
+        assert_eq!(openclaw.argv_preview(), vec!["openclaw".to_string(), "agent".to_string()]);
 
         let hermes = AgentCli::for_preset(ExecutorPreset::Hermes).unwrap();
         assert_eq!(hermes.name(), "hermes");
-        assert_eq!(
-            hermes.argv_preview(),
-            vec!["hermes".to_string(), "chat".to_string()]
-        );
+        assert_eq!(hermes.argv_preview(), vec!["hermes".to_string(), "chat".to_string()]);
 
         let claude = AgentCli::for_preset(ExecutorPreset::Claude).unwrap();
         assert_eq!(claude.name(), "claude");
-        assert_eq!(
-            claude.argv_preview(),
-            vec!["claude".to_string(), "--print".to_string()]
-        );
+        assert_eq!(claude.argv_preview(), vec!["claude".to_string(), "--print".to_string()]);
 
         let codex = AgentCli::for_preset(ExecutorPreset::Codex).unwrap();
         assert_eq!(codex.name(), "codex");
-        assert_eq!(
-            codex.argv_preview(),
-            vec!["codex".to_string(), "exec".to_string()]
-        );
+        assert_eq!(codex.argv_preview(), vec!["codex".to_string(), "exec".to_string()]);
 
         assert!(AgentCli::for_preset(ExecutorPreset::Cargo).is_none());
     }
@@ -4250,18 +3965,12 @@ mod tests {
             openclaw_model_ref_from_openrouter_model("anthropic/claude-sonnet-4.6"),
             "openrouter/anthropic/claude-sonnet-4.6"
         );
-        assert_eq!(
-            openclaw_model_ref_from_openrouter_model("openrouter/auto"),
-            "openrouter/auto"
-        );
+        assert_eq!(openclaw_model_ref_from_openrouter_model("openrouter/auto"), "openrouter/auto");
         assert_eq!(
             hermes_model_from_openrouter_model("openrouter/anthropic/claude-sonnet-4.6"),
             "anthropic/claude-sonnet-4.6"
         );
-        assert_eq!(
-            hermes_model_from_openrouter_model("openrouter/auto"),
-            "openrouter/auto"
-        );
+        assert_eq!(hermes_model_from_openrouter_model("openrouter/auto"), "openrouter/auto");
     }
 
     #[tokio::test]
@@ -4280,11 +3989,7 @@ mod tests {
 
         assert!(!stage.success);
         assert_eq!(stage.commands.len(), 1);
-        assert!(stage.commands[0]
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("blocked by policy"));
+        assert!(stage.commands[0].error.as_ref().unwrap().contains("blocked by policy"));
     }
 
     #[tokio::test]
@@ -4349,9 +4054,7 @@ mod tests {
         ));
         assert!(commit_subject_is_generic("harness: coding cycle"));
         assert!(commit_subject_is_generic("minor fixes"));
-        assert!(!commit_subject_is_generic(
-            "implement scoped code updates in src/coding.rs"
-        ));
+        assert!(!commit_subject_is_generic("implement scoped code updates in src/coding.rs"));
     }
 
     #[test]
@@ -4361,10 +4064,7 @@ mod tests {
             "implement scoped code updates in src/coding.rs",
             &files
         ));
-        assert!(!subject_mentions_changed_scope(
-            "improve workflow quality",
-            &files
-        ));
+        assert!(!subject_mentions_changed_scope("improve workflow quality", &files));
     }
 
     #[test]
@@ -4425,18 +4125,10 @@ mod tests {
     #[tokio::test]
     async fn repo_dirty_detects_untracked_files() {
         let dir = tempfile::tempdir().unwrap();
-        let status = Command::new("git")
-            .args(["init"])
-            .current_dir(dir.path())
-            .output()
-            .await
-            .unwrap();
+        let status =
+            Command::new("git").args(["init"]).current_dir(dir.path()).output().await.unwrap();
         assert!(status.status.success());
-        fs::write(
-            dir.path().join("new_file.rs"),
-            "pub const NEW_FILE: bool = true;\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("new_file.rs"), "pub const NEW_FILE: bool = true;\n").unwrap();
 
         assert!(repo_dirty(dir.path()).await.unwrap());
     }
@@ -4448,10 +4140,7 @@ mod tests {
         fs::create_dir_all(&gitdir).unwrap();
         fs::write(dir.path().join(".git"), "gitdir: real-git-dir\n").unwrap();
 
-        assert_eq!(
-            default_repo_run_lock_path(dir.path()),
-            gitdir.join(".agent-harness-code.lock")
-        );
+        assert_eq!(default_repo_run_lock_path(dir.path()), gitdir.join(".agent-harness-code.lock"));
         let _lock = acquire_repo_run_lock(&default_repo_run_lock_path(dir.path())).unwrap();
     }
 

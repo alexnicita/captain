@@ -47,10 +47,7 @@ impl Provider for EchoProvider {
 
     async fn generate(&self, req: &ProviderRequest) -> Result<ProviderResponse> {
         let objective_lower = req.objective.to_lowercase();
-        let has_time_result = req
-            .context
-            .iter()
-            .any(|line| line.contains("tool:time.now"));
+        let has_time_result = req.context.iter().any(|line| line.contains("tool:time.now"));
 
         let mut tool_calls = Vec::new();
         if objective_lower.contains("time") && !has_time_result {
@@ -160,9 +157,7 @@ impl HttpProvider {
         }
 
         if self.endpoint.contains("/v1/chat/completions") {
-            return self
-                .endpoint
-                .replace("/v1/chat/completions", "/v1/responses");
+            return self.endpoint.replace("/v1/chat/completions", "/v1/responses");
         }
 
         self.endpoint.clone()
@@ -229,10 +224,9 @@ fn load_key_from_openclaw_auth_profiles(
     let profiles = payload.pointer("/profiles")?.as_object()?;
 
     let candidate_ids: Vec<String> = match api_key_env.unwrap_or("OPENAI_API_KEY") {
-        "OPENROUTER_API_KEY" => vec![
-            "openrouter:default".to_string(),
-            "openrouter:manual".to_string(),
-        ],
+        "OPENROUTER_API_KEY" => {
+            vec!["openrouter:default".to_string(), "openrouter:manual".to_string()]
+        }
         "OPENAI_API_KEY" => vec![
             "openai:default".to_string(),
             "openai:manual".to_string(),
@@ -248,10 +242,7 @@ fn load_key_from_openclaw_auth_profiles(
     };
 
     for id in candidate_ids {
-        if let Some(credential) = profiles
-            .get(&id)
-            .and_then(profile_credential_from_auth_profile)
-        {
+        if let Some(credential) = profiles.get(&id).and_then(profile_credential_from_auth_profile) {
             return Some(credential);
         }
     }
@@ -261,11 +252,8 @@ fn load_key_from_openclaw_auth_profiles(
 
 fn profile_credential_from_auth_profile(profile: &Value) -> Option<String> {
     for field in ["key", "apiKey", "api_key", "access", "token"] {
-        if let Some(value) = profile
-            .get(field)
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+        if let Some(value) =
+            profile.get(field).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty())
         {
             return Some(value.to_string());
         }
@@ -314,9 +302,7 @@ impl Provider for HttpProvider {
             .with_context(|| format!("failed to decode provider response status={status}"))?;
 
         if !status.is_success() {
-            return Err(anyhow!(
-                "provider returned non-success status={status} body={body} "
-            ));
+            return Err(anyhow!("provider returned non-success status={status} body={body} "));
         }
 
         let (message, tool_calls) = if use_responses_api {
@@ -325,12 +311,7 @@ impl Provider for HttpProvider {
             parse_chat_payload(&body)
         };
 
-        Ok(ProviderResponse {
-            message,
-            done: tool_calls.is_empty(),
-            tool_calls,
-            raw: Some(body),
-        })
+        Ok(ProviderResponse { message, done: tool_calls.is_empty(), tool_calls, raw: Some(body) })
     }
 }
 
@@ -342,22 +323,14 @@ fn parse_chat_payload(body: &Value) -> (String, Vec<PlannedToolCall>) {
         .to_string();
 
     let mut tool_calls = Vec::new();
-    if let Some(calls) = body
-        .pointer("/choices/0/message/tool_calls")
-        .and_then(Value::as_array)
-    {
+    if let Some(calls) = body.pointer("/choices/0/message/tool_calls").and_then(Value::as_array) {
         for call in calls {
             if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
-                let args = call
-                    .pointer("/function/arguments")
-                    .and_then(Value::as_str)
-                    .unwrap_or("{}");
+                let args =
+                    call.pointer("/function/arguments").and_then(Value::as_str).unwrap_or("{}");
                 let input_json: Value =
                     serde_json::from_str(args).unwrap_or_else(|_| serde_json::json!({}));
-                tool_calls.push(PlannedToolCall {
-                    tool_name: name.to_string(),
-                    input_json,
-                });
+                tool_calls.push(PlannedToolCall { tool_name: name.to_string(), input_json });
             }
         }
     }
@@ -375,10 +348,8 @@ fn parse_responses_payload(body: &Value) -> (String, Vec<PlannedToolCall>) {
                 "message" => {
                     if let Some(content) = item.get("content").and_then(Value::as_array) {
                         for entry in content {
-                            let entry_type = entry
-                                .get("type")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default();
+                            let entry_type =
+                                entry.get("type").and_then(Value::as_str).unwrap_or_default();
                             if matches!(entry_type, "output_text" | "text") {
                                 if let Some(text) = entry.get("text").and_then(Value::as_str) {
                                     let trimmed = text.trim();
@@ -397,10 +368,8 @@ fn parse_responses_payload(body: &Value) -> (String, Vec<PlannedToolCall>) {
                             .and_then(Value::as_str)
                             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
                             .unwrap_or_else(|| serde_json::json!({}));
-                        tool_calls.push(PlannedToolCall {
-                            tool_name: name.to_string(),
-                            input_json,
-                        });
+                        tool_calls
+                            .push(PlannedToolCall { tool_name: name.to_string(), input_json });
                     }
                 }
                 _ => {}
@@ -519,11 +488,7 @@ mod tests {
     fn openrouter_key_can_be_loaded_from_openclaw_auth_profiles() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth-profiles.json");
-        fs::write(
-            &path,
-            r#"{"profiles":{"openrouter:default":{"key":"or-test-key"}}}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"profiles":{"openrouter:default":{"key":"or-test-key"}}}"#).unwrap();
 
         let key = load_key_from_openclaw_auth_profiles(&path, Some("OPENROUTER_API_KEY"));
         assert_eq!(key.as_deref(), Some("or-test-key"));
@@ -533,11 +498,8 @@ mod tests {
     fn openrouter_key_can_be_loaded_from_escaped_auth_profiles() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth-profiles.json");
-        fs::write(
-            &path,
-            r#"{\"profiles\":{\"openrouter:default\":{\"key\":\"or-test-key\"}}}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{\"profiles\":{\"openrouter:default\":{\"key\":\"or-test-key\"}}}"#)
+            .unwrap();
 
         let key = load_key_from_openclaw_auth_profiles(&path, Some("OPENROUTER_API_KEY"));
         assert_eq!(key.as_deref(), Some("or-test-key"));

@@ -34,10 +34,7 @@ impl CodePlanner for ProviderCodePlanner {
             context: vec![
                 format!("task_id={}", task.id),
                 format!("target_files={}", task.target_files.join(",")),
-                format!(
-                    "acceptance_criteria={}",
-                    task.acceptance_criteria.join(" | ")
-                ),
+                format!("acceptance_criteria={}", task.acceptance_criteria.join(" | ")),
                 format!("repo_snapshot={repo_snapshot}"),
             ],
             available_tools: vec![],
@@ -47,12 +44,7 @@ impl CodePlanner for ProviderCodePlanner {
         let steps = parse_steps(&resp.message, &task.target_files);
 
         Ok(ArchitecturePlan {
-            summary: resp
-                .message
-                .lines()
-                .next()
-                .unwrap_or("planned via provider")
-                .to_string(),
+            summary: resp.message.lines().next().unwrap_or("planned via provider").to_string(),
             steps,
             risk_checks: task.acceptance_criteria.clone(),
         })
@@ -123,10 +115,7 @@ mod tests {
 
     #[test]
     fn parse_steps_uses_fallback_for_unstructured_lines() {
-        let steps = parse_steps(
-            "Architecture: improve reliability",
-            &["src/a.rs".to_string()],
-        );
+        let steps = parse_steps("Architecture: improve reliability", &["src/a.rs".to_string()]);
         assert_eq!(steps.len(), 1);
         assert!(steps[0]
             .title

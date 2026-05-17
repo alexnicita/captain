@@ -55,20 +55,13 @@ impl Default for ProviderConfig {
 
 impl Default for OrchestratorConfig {
     fn default() -> Self {
-        Self {
-            max_steps: 8,
-            max_tool_calls: 8,
-            max_runtime_seconds: 60,
-        }
+        Self { max_steps: 8, max_tool_calls: 8, max_runtime_seconds: 60 }
     }
 }
 
 impl Default for SchedulerConfig {
     fn default() -> Self {
-        Self {
-            max_concurrent_tasks: 2,
-            queue_poll_ms: 50,
-        }
+        Self { max_concurrent_tasks: 2, queue_poll_ms: 50 }
     }
 }
 

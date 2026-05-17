@@ -91,11 +91,7 @@ fn rank_task_candidates(
             continue;
         }
 
-        let history = progress
-            .task_history
-            .get(&task.id)
-            .cloned()
-            .unwrap_or_default();
+        let history = progress.task_history.get(&task.id).cloned().unwrap_or_default();
         let cooldown_remaining = cooldown_remaining(cycle, history.last_selected_cycle);
 
         if progress.attempted_task_ids.contains(&task.id)
@@ -110,40 +106,22 @@ fn rank_task_candidates(
         let feasibility = task_feasibility_score(repo_path, &task);
         let cooldown_penalty = (cooldown_remaining as i64) * 120;
         let repeat_penalty = (history.selected_count as i64) * 18;
-        let fallback_bonus = if task.id.starts_with("fallback::") {
-            60
-        } else {
-            0
-        };
-        let supercycle_bonus = if task.source.contains("TASK_PACK") {
-            420
-        } else {
-            0
-        };
+        let fallback_bonus = if task.id.starts_with("fallback::") { 60 } else { 0 };
+        let supercycle_bonus = if task.source.contains("TASK_PACK") { 420 } else { 0 };
         let docs_penalty = if has_code_tasks && task.source.ends_with(".md") && !escalate_source {
             320
         } else {
             0
         };
         let fallback_penalty_when_supercycle =
-            if has_supercycle_tasks && task.id.starts_with("fallback::") {
-                600
-            } else {
-                0
-            };
+            if has_supercycle_tasks && task.id.starts_with("fallback::") { 600 } else { 0 };
         let score = impact * 100 + novelty + feasibility * 25 + fallback_bonus + supercycle_bonus
             - cooldown_penalty
             - repeat_penalty
             - docs_penalty
             - fallback_penalty_when_supercycle;
 
-        ranked.push(RankedTaskCandidate {
-            task,
-            score,
-            impact,
-            novelty,
-            cooldown_remaining,
-        });
+        ranked.push(RankedTaskCandidate { task, score, impact, novelty, cooldown_remaining });
     }
 
     ranked
@@ -192,11 +170,8 @@ fn collect_supercycle_tasks(repo_path: &Path) -> Vec<FeatureTask> {
         return Vec::new();
     };
 
-    let source_name = latest_pack
-        .strip_prefix(repo_path)
-        .unwrap_or(&latest_pack)
-        .display()
-        .to_string();
+    let source_name =
+        latest_pack.strip_prefix(repo_path).unwrap_or(&latest_pack).display().to_string();
 
     let mut tasks = Vec::new();
     for raw_line in content.lines() {
@@ -223,13 +198,7 @@ fn collect_supercycle_tasks(repo_path: &Path) -> Vec<FeatureTask> {
 }
 
 fn collect_doc_tasks(repo_path: &Path, escalate_source: bool) -> Vec<FeatureTask> {
-    let primary = [
-        "ARCHITECTURE.md",
-        "ROADMAP.md",
-        "README.md",
-        "RUNBOOK.md",
-        "MIGRATION.md",
-    ];
+    let primary = ["ARCHITECTURE.md", "ROADMAP.md", "README.md", "RUNBOOK.md", "MIGRATION.md"];
     let fallback_only = ["CONTRIBUTING.md"];
 
     let mut files = primary.to_vec();
@@ -276,11 +245,7 @@ fn looks_like_roadmap_task(line: &str) -> bool {
     let roadmap_hint = line.to_ascii_lowercase();
     let is_actionable = line.starts_with("- ")
         || line.starts_with('*')
-        || line
-            .chars()
-            .next()
-            .map(|ch| ch.is_ascii_digit())
-            .unwrap_or(false);
+        || line.chars().next().map(|ch| ch.is_ascii_digit()).unwrap_or(false);
     let looks_like_roadmap = roadmap_hint.contains("planned")
         || roadmap_hint.contains("next")
         || roadmap_hint.contains("todo")
@@ -331,16 +296,8 @@ pub(crate) fn select_forced_code_change_task(
         .collect::<Vec<_>>();
 
     forced.sort_by(|a, b| {
-        let ah = progress
-            .task_history
-            .get(&a.id)
-            .cloned()
-            .unwrap_or_default();
-        let bh = progress
-            .task_history
-            .get(&b.id)
-            .cloned()
-            .unwrap_or_default();
+        let ah = progress.task_history.get(&a.id).cloned().unwrap_or_default();
+        let bh = progress.task_history.get(&b.id).cloned().unwrap_or_default();
 
         ah.selected_count
             .cmp(&bh.selected_count)
@@ -401,35 +358,15 @@ fn task_feasibility_score(repo_path: &Path, task: &FeatureTask) -> i64 {
 }
 
 fn task_impact_score(task: &FeatureTask) -> i64 {
-    let mut score = if task.source.starts_with("src/") {
-        7
-    } else {
-        4
-    };
+    let mut score = if task.source.starts_with("src/") { 7 } else { 4 };
     let text = format!("{} {}", task.title, task.selected_line).to_ascii_lowercase();
 
-    for keyword in [
-        "security",
-        "harden",
-        "fail",
-        "abort",
-        "lock",
-        "concurrency",
-        "correctness",
-    ] {
+    for keyword in ["security", "harden", "fail", "abort", "lock", "concurrency", "correctness"] {
         if text.contains(keyword) {
             score += 3;
         }
     }
-    for keyword in [
-        "test",
-        "coverage",
-        "regression",
-        "observe",
-        "event",
-        "commit",
-        "push",
-    ] {
+    for keyword in ["test", "coverage", "regression", "observe", "event", "commit", "push"] {
         if text.contains(keyword) {
             score += 2;
         }
@@ -455,10 +392,7 @@ pub(crate) fn record_task_selection(
 }
 
 pub(crate) fn record_task_outcome(progress: &mut TaskProgressMemory, task_id: &str, outcome: &str) {
-    let history = progress
-        .task_history
-        .entry(task_id.to_string())
-        .or_default();
+    let history = progress.task_history.entry(task_id.to_string()).or_default();
     history.last_outcome = Some(outcome.to_string());
 }
 
@@ -466,11 +400,7 @@ fn slugify_task_line(line: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
     for ch in line.chars() {
-        let mapped = if ch.is_ascii_alphanumeric() {
-            ch.to_ascii_lowercase()
-        } else {
-            '-'
-        };
+        let mapped = if ch.is_ascii_alphanumeric() { ch.to_ascii_lowercase() } else { '-' };
         if mapped == '-' {
             if !prev_dash {
                 out.push(mapped);

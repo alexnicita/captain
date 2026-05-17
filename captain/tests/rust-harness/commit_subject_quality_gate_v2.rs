@@ -84,8 +84,5 @@ fn deterministic_subject_prioritizes_src_when_generated_docs_are_also_staged() {
         subject.starts_with("implement scoped code updates"),
         "subject should classify mixed src/doc diffs as code work, got {subject:?}"
     );
-    assert!(has_informative_subject_scope(
-        &subject,
-        &["captain/src/dogfood_smoke.rs"]
-    ));
+    assert!(has_informative_subject_scope(&subject, &["captain/src/dogfood_smoke.rs"]));
 }

@@ -43,10 +43,7 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
         if let Some(patch) = extract_diff(&resp.message) {
             let touched_files = extract_touched_files(&patch);
             return Ok(CodeDiffProposal {
-                summary: format!(
-                    "provider generated patch touching {} files",
-                    touched_files.len()
-                ),
+                summary: format!("provider generated patch touching {} files", touched_files.len()),
                 unified_diff: patch,
                 touched_files,
             });
@@ -54,18 +51,13 @@ impl CodeDiffGenerator for ProviderDiffGenerator {
 
         if let Some((paths, sentinel)) = extract_json_edits(&resp.message) {
             return Ok(CodeDiffProposal {
-                summary: format!(
-                    "provider generated json edits touching {} files",
-                    paths.len()
-                ),
+                summary: format!("provider generated json edits touching {} files", paths.len()),
                 unified_diff: sentinel,
                 touched_files: paths,
             });
         }
 
-        Err(anyhow!(
-            "provider response did not include a unified diff or json edits"
-        ))
+        Err(anyhow!("provider response did not include a unified diff or json edits"))
     }
 }
 
@@ -92,9 +84,7 @@ fn extract_diff(message: &str) -> Option<String> {
 fn sanitize_unified_diff(raw: &str) -> Option<String> {
     let mut lines = raw.lines().map(str::trim_end).collect::<Vec<_>>();
 
-    let first_diff = lines
-        .iter()
-        .position(|line| line.starts_with("diff --git "))?;
+    let first_diff = lines.iter().position(|line| line.starts_with("diff --git "))?;
     let mut normalized = lines.split_off(first_diff);
 
     while matches!(normalized.last(), Some(last) if last.trim().is_empty() || last.trim() == "```")
@@ -148,10 +138,7 @@ fn extract_json_edits(message: &str) -> Option<(Vec<String>, String)> {
 fn extract_touched_files(diff: &str) -> Vec<String> {
     let mut files = Vec::new();
     for line in diff.lines() {
-        if let Some(path) = line
-            .strip_prefix("+++ b/")
-            .or_else(|| line.strip_prefix("--- a/"))
-        {
+        if let Some(path) = line.strip_prefix("+++ b/").or_else(|| line.strip_prefix("--- a/")) {
             let trimmed = path.trim();
             if !trimmed.is_empty() && trimmed != "/dev/null" {
                 files.push(trimmed.to_string());
@@ -194,10 +181,7 @@ new file mode 100644
 "#;
 
         let files = extract_touched_files(diff);
-        assert_eq!(
-            files,
-            vec!["new.txt", "old.txt", "src/added.rs", "src/gone.rs"]
-        );
+        assert_eq!(files, vec!["new.txt", "old.txt", "src/added.rs", "src/gone.rs"]);
     }
 
     #[test]

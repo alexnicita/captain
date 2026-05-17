@@ -31,9 +31,8 @@ pub fn parse_duration_seconds(input: &str) -> std::result::Result<u64, String> {
         return Err(format!("invalid duration: {input}"));
     }
 
-    let quantity = num_part
-        .parse::<u64>()
-        .map_err(|_| format!("invalid duration number: {num_part}"))?;
+    let quantity =
+        num_part.parse::<u64>().map_err(|_| format!("invalid duration number: {num_part}"))?;
 
     if quantity == 0 {
         return Err("duration must be > 0".to_string());
@@ -44,9 +43,7 @@ pub fn parse_duration_seconds(input: &str) -> std::result::Result<u64, String> {
         "s" => Ok(quantity),
         "m" => Ok(quantity.saturating_mul(60)),
         "h" => Ok(quantity.saturating_mul(3600)),
-        _ => Err(format!(
-            "invalid duration unit '{unit_part}' (use seconds or suffix s/m/h)"
-        )),
+        _ => Err(format!("invalid duration unit '{unit_part}' (use seconds or suffix s/m/h)")),
     }
 }
 

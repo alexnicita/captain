@@ -244,11 +244,9 @@ async fn main() -> Result<()> {
         Some(Commands::Run { objective, task_id }) => {
             run_once(objective, task_id, &cfg, &policy).await?
         }
-        Some(Commands::Loop {
-            interval_seconds,
-            objective,
-            max_iterations,
-        }) => loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?,
+        Some(Commands::Loop { interval_seconds, objective, max_iterations }) => {
+            loop_mode(interval_seconds, objective, max_iterations, &cfg, &policy).await?
+        }
         Some(Commands::Batch { objectives_file }) => {
             batch_mode(&objectives_file, &cfg, &policy).await?
         }
@@ -308,16 +306,12 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Gate { command }) => gate_command(command).await?,
         Some(Commands::Status) => status(&cfg).await?,
-        Some(Commands::Replay {
-            path,
-            run_id,
-            latest_run,
-        }) => replay(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
-        Some(Commands::Eval {
-            path,
-            run_id,
-            latest_run,
-        }) => eval(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?,
+        Some(Commands::Replay { path, run_id, latest_run }) => {
+            replay(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?
+        }
+        Some(Commands::Eval { path, run_id, latest_run }) => {
+            eval(path.as_deref(), run_id.as_deref(), latest_run, &cfg).await?
+        }
         None => {
             if let Some(prompt) = cli.quick_prompt {
                 prepare_start_workspace(".").await?;
@@ -436,23 +430,14 @@ async fn run_once(
     };
 
     let task_id = task_id.unwrap_or_else(|| format!("task-{}", now_unix()));
-    let summary = orchestrator
-        .run_task(TaskSpec {
-            task_id: task_id.clone(),
-            objective,
-        })
-        .await?;
+    let summary = orchestrator.run_task(TaskSpec { task_id: task_id.clone(), objective }).await?;
 
-    sink.emit(
-        &HarnessEvent::new(kinds::CLI_RUN_SUMMARY)
-            .with_task_id(task_id)
-            .with_data(json!({
-                "steps": summary.steps,
-                "tool_calls": summary.tool_calls,
-                "reason": summary.stopped_reason.clone(),
-                "runtime_ms": summary.runtime_ms,
-            })),
-    )?;
+    sink.emit(&HarnessEvent::new(kinds::CLI_RUN_SUMMARY).with_task_id(task_id).with_data(json!({
+        "steps": summary.steps,
+        "tool_calls": summary.tool_calls,
+        "reason": summary.stopped_reason.clone(),
+        "runtime_ms": summary.runtime_ms,
+    })))?;
 
     sink.emit(&HarnessEvent::new(kinds::RUN_FINISHED).with_data(json!({
         "mode": "run",
@@ -539,21 +524,16 @@ async fn batch_mode(objectives_file: &str, cfg: &AppConfig, policy: &ToolPolicy)
         task_index += 1;
     }
 
-    let scheduler = Scheduler {
-        orchestrator: &orchestrator,
-        event_sink: &sink,
-        cfg: cfg.scheduler.clone(),
-    };
+    let scheduler =
+        Scheduler { orchestrator: &orchestrator, event_sink: &sink, cfg: cfg.scheduler.clone() };
     let summary = scheduler.run_queue(queue).await?;
 
-    sink.emit(
-        &HarnessEvent::new(kinds::CLI_BATCH_SUMMARY).with_data(json!({
-            "total": summary.total,
-            "completed": summary.completed,
-            "failed": summary.failed,
-            "max_concurrent_tasks": cfg.scheduler.max_concurrent_tasks,
-        })),
-    )?;
+    sink.emit(&HarnessEvent::new(kinds::CLI_BATCH_SUMMARY).with_data(json!({
+        "total": summary.total,
+        "completed": summary.completed,
+        "failed": summary.failed,
+        "max_concurrent_tasks": cfg.scheduler.max_concurrent_tasks,
+    })))?;
 
     sink.emit(&HarnessEvent::new(kinds::RUN_FINISHED).with_data(json!({
         "mode": "batch",
@@ -767,10 +747,7 @@ async fn replay(
     let p = path.unwrap_or(&cfg.event_log_path);
     let summary = replay_file_with_filter(
         p,
-        &ReplayFilter {
-            run_id: run_id.map(|s| s.to_string()),
-            latest_run,
-        },
+        &ReplayFilter { run_id: run_id.map(|s| s.to_string()), latest_run },
     )?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
@@ -783,10 +760,7 @@ async fn eval(
     cfg: &AppConfig,
 ) -> Result<()> {
     let p = path.unwrap_or(&cfg.event_log_path);
-    let filter = ReplayFilter {
-        run_id: run_id.map(|s| s.to_string()),
-        latest_run,
-    };
+    let filter = ReplayFilter { run_id: run_id.map(|s| s.to_string()), latest_run };
     let events = replay_events_file_with_filter(p, &filter)?;
     let summary = replay_file_with_filter(p, &filter)?;
     let report = evaluate_events(&summary, &events);
@@ -813,13 +787,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Some(Commands::Code {
-                repo,
-                time,
-                prompt,
-                prompt_file,
-                ..
-            }) => {
+            Some(Commands::Code { repo, time, prompt, prompt_file, .. }) => {
                 assert_eq!(repo, ".");
                 assert_eq!(time, "1h");
                 assert_eq!(prompt.as_deref(), Some("focus on portability"));
@@ -854,26 +822,14 @@ mod tests {
 
     #[test]
     fn parse_executor_preset_accepts_hermes() {
-        assert!(matches!(
-            parse_executor_preset("hermes").unwrap(),
-            ExecutorPreset::Hermes
-        ));
+        assert!(matches!(parse_executor_preset("hermes").unwrap(), ExecutorPreset::Hermes));
     }
 
     #[test]
     fn parse_executor_preset_accepts_claude_and_codex() {
-        assert!(matches!(
-            parse_executor_preset("claude").unwrap(),
-            ExecutorPreset::Claude
-        ));
-        assert!(matches!(
-            parse_executor_preset("claude-code").unwrap(),
-            ExecutorPreset::Claude
-        ));
-        assert!(matches!(
-            parse_executor_preset("codex").unwrap(),
-            ExecutorPreset::Codex
-        ));
+        assert!(matches!(parse_executor_preset("claude").unwrap(), ExecutorPreset::Claude));
+        assert!(matches!(parse_executor_preset("claude-code").unwrap(), ExecutorPreset::Claude));
+        assert!(matches!(parse_executor_preset("codex").unwrap(), ExecutorPreset::Codex));
     }
 
     #[test]

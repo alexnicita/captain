@@ -146,10 +146,7 @@ impl EventSink {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "failed to create event log parent dir: {}",
-                    parent.display()
-                )
+                format!("failed to create event log parent dir: {}", parent.display())
             })?;
         }
         let file = OpenOptions::new()
@@ -171,7 +168,10 @@ impl EventSink {
             event.run_id = Some(self.run_id().to_string());
         }
         if event.seq.is_none() {
-            let mut next_seq = self.next_seq.lock().map_err(|e| anyhow::anyhow!("event seq mutex poisoned: {}", e))?;
+            let mut next_seq = self
+                .next_seq
+                .lock()
+                .map_err(|e| anyhow::anyhow!("event seq mutex poisoned: {}", e))?;
             event.seq = Some(*next_seq);
             *next_seq += 1;
         }
@@ -179,10 +179,9 @@ impl EventSink {
         let mut line = serde_json::to_vec(&event).context("failed to serialize event")?;
         line.push(b'\n');
 
-        let mut guard = self.file.lock().map_err(|e| anyhow::anyhow!("event sink mutex poisoned: {}", e))?;
-        guard
-            .write_all(&line)
-            .context("failed to append event line")?;
+        let mut guard =
+            self.file.lock().map_err(|e| anyhow::anyhow!("event sink mutex poisoned: {}", e))?;
+        guard.write_all(&line).context("failed to append event line")?;
         guard.flush().context("failed to flush event sink")?;
         Ok(())
     }
@@ -197,10 +196,7 @@ impl EventSink {
 }
 
 pub fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 fn default_run_id() -> String {
@@ -217,8 +213,7 @@ mod tests {
         let path = dir.path().join("events.jsonl");
         let sink = EventSink::new(&path).expect("sink");
 
-        sink.emit(&HarnessEvent::new("test.event"))
-            .expect("emit should work");
+        sink.emit(&HarnessEvent::new("test.event")).expect("emit should work");
 
         let bytes = std::fs::read(&path).expect("read events file");
         assert!(!bytes.is_empty(), "events file should not be empty");

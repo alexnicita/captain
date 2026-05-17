@@ -137,12 +137,7 @@ async fn apply_json_edits(repo_path: &Path, sentinel: &str) -> Result<CodeApplyR
         }
         fs::write(&abs, content)?;
 
-        let add = Command::new("git")
-            .arg("add")
-            .arg(path)
-            .current_dir(repo_path)
-            .output()
-            .await?;
+        let add = Command::new("git").arg("add").arg(path).current_dir(repo_path).output().await?;
         if !add.status.success() {
             return Ok(CodeApplyResult {
                 applied: false,
@@ -177,9 +172,7 @@ fn destructive_edit_reason(path: &str, content: &str, abs: &Path) -> Result<Opti
     let lower = trimmed.to_ascii_lowercase();
 
     if lower.contains("... existing") || lower.contains("placeholder") {
-        return Ok(Some(
-            "placeholder/materialization text detected".to_string(),
-        ));
+        return Ok(Some("placeholder/materialization text detected".to_string()));
     }
 
     if path.starts_with("src/") {
@@ -232,10 +225,7 @@ fn write_patch(repo_path: &Path, patch: &str) -> Result<PathBuf> {
 }
 
 fn nanos_since_epoch() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or_default()
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default()
 }
 
 #[cfg(test)]

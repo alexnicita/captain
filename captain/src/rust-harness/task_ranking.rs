@@ -10,12 +10,7 @@ pub struct TaskCandidate {
 
 impl TaskCandidate {
     pub fn new(id: impl Into<String>, priority: i32) -> Self {
-        Self {
-            id: id.into(),
-            priority,
-            last_selected_cycle: None,
-            consecutive_misses: 0,
-        }
+        Self { id: id.into(), priority, last_selected_cycle: None, consecutive_misses: 0 }
     }
 }
 
@@ -27,10 +22,7 @@ pub struct RankingConfig {
 
 impl Default for RankingConfig {
     fn default() -> Self {
-        Self {
-            cooldown_cycles: 2,
-            miss_boost_per_cycle: 1,
-        }
+        Self { cooldown_cycles: 2, miss_boost_per_cycle: 1 }
     }
 }
 
@@ -112,10 +104,7 @@ mod tests {
 
     #[test]
     fn cooldown_penalizes_recently_selected_task() {
-        let cfg = RankingConfig {
-            cooldown_cycles: 3,
-            miss_boost_per_cycle: 1,
-        };
+        let cfg = RankingConfig { cooldown_cycles: 3, miss_boost_per_cycle: 1 };
 
         let a = TaskCandidate {
             id: "a".to_string(),
@@ -136,10 +125,7 @@ mod tests {
 
     #[test]
     fn miss_boost_eventually_overcomes_base_priority_gap() {
-        let cfg = RankingConfig {
-            cooldown_cycles: 0,
-            miss_boost_per_cycle: 3,
-        };
+        let cfg = RankingConfig { cooldown_cycles: 0, miss_boost_per_cycle: 3 };
 
         let high = TaskCandidate {
             id: "high".to_string(),

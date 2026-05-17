@@ -118,18 +118,17 @@ impl ErrorClassifier {
                 let skipped = bool_field(&event.data, "skipped").unwrap_or(false);
                 let result = string_field(&event.data, "result");
                 let detail = string_field(&event.data, "detail");
-                let class = event
-                    .data
-                    .get("error_class")
-                    .and_then(ErrorClass::from_value)
-                    .or_else(|| {
-                        Self::class_for_git_event(
-                            success,
-                            skipped,
-                            result.as_deref().unwrap_or(""),
-                            detail.as_deref().unwrap_or(""),
-                        )
-                    })?;
+                let class =
+                    event.data.get("error_class").and_then(ErrorClass::from_value).or_else(
+                        || {
+                            Self::class_for_git_event(
+                                success,
+                                skipped,
+                                result.as_deref().unwrap_or(""),
+                                detail.as_deref().unwrap_or(""),
+                            )
+                        },
+                    )?;
 
                 Some(ClassifiedError {
                     surface: ErrorSurface::Git,

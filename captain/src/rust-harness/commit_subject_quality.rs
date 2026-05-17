@@ -32,11 +32,7 @@ pub fn normalize_subject_text(subject: &str) -> String {
 }
 
 fn normalize_file_stem_scope(path: &str) -> String {
-    let stem = path
-        .rsplit('/')
-        .next()
-        .and_then(|name| name.split('.').next())
-        .unwrap_or("");
+    let stem = path.rsplit('/').next().and_then(|name| name.split('.').next()).unwrap_or("");
     normalize_scope_token(stem)
 }
 
@@ -60,10 +56,7 @@ pub fn is_generic_subject(subject: &str) -> bool {
         "changes",
     ];
 
-    normalized == "wip"
-        || blocked_patterns
-            .iter()
-            .any(|pattern| normalized.contains(pattern))
+    normalized == "wip" || blocked_patterns.iter().any(|pattern| normalized.contains(pattern))
 }
 
 fn path_has_src_component(path: &str) -> bool {
@@ -79,24 +72,13 @@ pub fn deterministic_subject_from_files(files: &[String]) -> String {
     });
     names.dedup();
 
-    let top = names
-        .iter()
-        .take(2)
-        .map(|f| f.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
+    let top = names.iter().take(2).map(|f| f.as_str()).collect::<Vec<_>>().join(", ");
 
     let intent = if names.iter().any(|f| path_has_src_component(f)) {
         "implement scoped code updates"
-    } else if names
-        .iter()
-        .any(|f| f.ends_with("README.md") || f.ends_with("RUNBOOK.md"))
-    {
+    } else if names.iter().any(|f| f.ends_with("README.md") || f.ends_with("RUNBOOK.md")) {
         "document operator workflow changes"
-    } else if names
-        .iter()
-        .any(|f| f.contains("test") || f.contains("fixtures/"))
-    {
+    } else if names.iter().any(|f| f.contains("test") || f.contains("fixtures/")) {
         "add regression coverage"
     } else {
         "update harness workflow"

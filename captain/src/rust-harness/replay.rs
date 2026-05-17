@@ -165,10 +165,7 @@ mod tests {
 "#;
         let summary = replay_str_with_filter(
             content,
-            &ReplayFilter {
-                latest_run: true,
-                ..Default::default()
-            },
+            &ReplayFilter { latest_run: true, ..Default::default() },
         )
         .unwrap();
         assert_eq!(summary.selected_run_id.as_deref(), Some("r2"));
@@ -184,10 +181,7 @@ mod tests {
 "#;
         let summary = replay_str_with_filter(
             content,
-            &ReplayFilter {
-                run_id: Some("r1".to_string()),
-                latest_run: false,
-            },
+            &ReplayFilter { run_id: Some("r1".to_string()), latest_run: false },
         )
         .unwrap();
         assert_eq!(summary.total_events, 1);
@@ -202,18 +196,13 @@ mod tests {
 {"kind":"run.started","ts_unix":3,"run_id":"r2","seq":1}
 {"kind":"tool.call","ts_unix":4,"run_id":"r2","seq":2,"data":{"tool":"echo"}}
 "#;
-        let filter = ReplayFilter {
-            latest_run: true,
-            ..Default::default()
-        };
+        let filter = ReplayFilter { latest_run: true, ..Default::default() };
         let events = replay_events_str_with_filter(content, &filter).unwrap();
         let summary = replay_str_with_filter(content, &filter).unwrap();
 
         assert_eq!(summary.selected_run_id.as_deref(), Some("r2"));
         assert_eq!(events.len(), summary.total_events);
-        assert!(events
-            .iter()
-            .all(|event| event.run_id.as_deref() == Some("r2")));
+        assert!(events.iter().all(|event| event.run_id.as_deref() == Some("r2")));
     }
 
     #[test]
@@ -221,14 +210,9 @@ mod tests {
         let content = r#"{"kind":"run.started","ts_unix":1,"run_id":"r1","seq":1}"#;
         let err = replay_str_with_filter(
             content,
-            &ReplayFilter {
-                run_id: Some("r1".to_string()),
-                latest_run: true,
-            },
+            &ReplayFilter { run_id: Some("r1".to_string()), latest_run: true },
         )
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("cannot set both run_id and latest_run"));
+        assert!(err.to_string().contains("cannot set both run_id and latest_run"));
     }
 }

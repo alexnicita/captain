@@ -42,11 +42,7 @@ impl CodeCycleEngine {
         diff_generator: Arc<dyn CodeDiffGenerator>,
         diff_applier: Arc<dyn CodeDiffApplier>,
     ) -> Self {
-        Self {
-            planner,
-            diff_generator,
-            diff_applier,
-        }
+        Self { planner, diff_generator, diff_applier }
     }
 
     pub async fn run_cycle(
@@ -56,10 +52,7 @@ impl CodeCycleEngine {
         repo_snapshot: &str,
     ) -> Result<CodeCycleReport> {
         let plan = self.planner.plan_task(task, repo_snapshot).await?;
-        let proposal = self
-            .diff_generator
-            .generate_diff(task, &plan, repo_snapshot)
-            .await?;
+        let proposal = self.diff_generator.generate_diff(task, &plan, repo_snapshot).await?;
 
         if proposal.unified_diff.trim().is_empty() {
             return Err(anyhow!("diff generator returned an empty patch"));

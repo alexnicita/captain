@@ -72,10 +72,7 @@ pub struct RuntimeGate {
 
 impl RuntimeGate {
     pub fn new(start_epoch: u64, min_runtime_sec: u64) -> Self {
-        Self {
-            start_epoch,
-            min_runtime_sec,
-        }
+        Self { start_epoch, min_runtime_sec }
     }
 
     pub fn start_epoch(&self) -> u64 {
@@ -95,8 +92,7 @@ impl RuntimeGate {
     }
 
     pub fn remaining_sec_at(&self, now_epoch: u64) -> u64 {
-        self.min_runtime_sec
-            .saturating_sub(self.elapsed_sec_at(now_epoch))
+        self.min_runtime_sec.saturating_sub(self.elapsed_sec_at(now_epoch))
     }
 
     pub fn is_active_at(&self, now_epoch: u64) -> bool {
@@ -253,10 +249,7 @@ pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
 pub fn gate_stop(args: GateStopArgs) -> Result<serde_json::Value> {
     let run_dir = resolve_run_dir(args.run_dir.as_deref(), args.base_dir.as_deref())?;
     let stop_path = run_dir.join("STOP");
-    fs::write(
-        &stop_path,
-        format!("stop requested at epoch={}\n", now_unix()),
-    )?;
+    fs::write(&stop_path, format!("stop requested at epoch={}\n", now_unix()))?;
     append_log(&run_dir, "STOP requested by operator")?;
     Ok(json!({
         "stop_requested": true,
@@ -307,9 +300,7 @@ pub fn parse_checklist(path: &Path) -> Result<ChecklistStats> {
 }
 
 fn runs_root(base_dir: Option<&str>) -> PathBuf {
-    base_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("./runs/runtime-gate"))
+    base_dir.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("./runs/runtime-gate"))
 }
 
 fn latest_ptr(runs_root: &Path) -> PathBuf {
@@ -337,19 +328,13 @@ fn resolve_run_dir(run_dir: Option<&str>, base_dir: Option<&str>) -> Result<Path
         .with_context(|| format!("no latest run pointer found: {}", ptr.display()))?;
     let resolved = PathBuf::from(path_text.trim());
     if !resolved.exists() {
-        return Err(anyhow!(
-            "latest run path does not exist: {}",
-            resolved.display()
-        ));
+        return Err(anyhow!("latest run path does not exist: {}", resolved.display()));
     }
     Ok(resolved)
 }
 
 fn write_state(run_dir: &Path, state: &RunState) -> Result<()> {
-    fs::write(
-        run_dir.join("state.json"),
-        serde_json::to_string_pretty(state)?,
-    )?;
+    fs::write(run_dir.join("state.json"), serde_json::to_string_pretty(state)?)?;
     Ok(())
 }
 
@@ -411,10 +396,7 @@ fn read_last_heartbeat_epoch(run_dir: &Path) -> Result<Option<u64>> {
 
 fn now_unix() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
 #[cfg(test)]

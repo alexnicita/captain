@@ -44,12 +44,12 @@ impl<'a> Orchestrator<'a> {
         let budget = Duration::from_secs(self.cfg.max_runtime_seconds);
 
         self.event_sink.emit(
-            &HarnessEvent::new(kinds::TASK_STARTED)
-                .with_task_id(task.task_id.clone())
-                .with_data(json!({
+            &HarnessEvent::new(kinds::TASK_STARTED).with_task_id(task.task_id.clone()).with_data(
+                json!({
                     "objective": task.objective.clone(),
                     "provider": self.provider.name(),
-                })),
+                }),
+            ),
         )?;
 
         let stopped_reason = loop {
@@ -67,9 +67,7 @@ impl<'a> Orchestrator<'a> {
                 available_tools: self.tools.names(),
             };
 
-            let res = self
-                .generate_with_retries(&task.task_id, steps, &req)
-                .await?;
+            let res = self.generate_with_retries(&task.task_id, steps, &req).await?;
 
             let provider_message = res.message.clone();
             let provider_done = res.done;
@@ -111,10 +109,7 @@ impl<'a> Orchestrator<'a> {
                         .with_data(json!({"tool": tool_name.clone(), "input": tool_input.clone()})),
                 )?;
 
-                match self
-                    .tools
-                    .dispatch_with_policy(&tool_name, tool_input, &self.tool_policy)
-                {
+                match self.tools.dispatch_with_policy(&tool_name, tool_input, &self.tool_policy) {
                     Ok(output) => {
                         let line = format!("tool:{} => {}", tool_name, output.content);
                         transcript.push(line.clone());
@@ -153,14 +148,14 @@ impl<'a> Orchestrator<'a> {
         let runtime_ms = start.elapsed().as_millis() as u64;
 
         self.event_sink.emit(
-            &HarnessEvent::new(kinds::TASK_FINISHED)
-                .with_task_id(task.task_id.clone())
-                .with_data(json!({
+            &HarnessEvent::new(kinds::TASK_FINISHED).with_task_id(task.task_id.clone()).with_data(
+                json!({
                     "steps": steps,
                     "tool_calls": tool_calls,
                     "reason": stopped_reason.clone(),
                     "runtime_ms": runtime_ms,
-                })),
+                }),
+            ),
         )?;
 
         Ok(TaskSummary {
@@ -238,10 +233,7 @@ impl<'a> Orchestrator<'a> {
             }
         }
 
-        Err(anyhow!(
-            "provider failed after {} attempts",
-            self.provider_cfg.max_retries + 1
-        ))
+        Err(anyhow!("provider failed after {} attempts", self.provider_cfg.max_retries + 1))
     }
 }
 
@@ -289,19 +281,12 @@ mod tests {
             },
             tools: &tools,
             tool_policy: ToolPolicy::default(),
-            cfg: OrchestratorConfig {
-                max_steps: 4,
-                max_tool_calls: 2,
-                max_runtime_seconds: 5,
-            },
+            cfg: OrchestratorConfig { max_steps: 4, max_tool_calls: 2, max_runtime_seconds: 5 },
             event_sink: &sink,
         };
 
         let summary = orchestrator
-            .run_task(TaskSpec {
-                task_id: "t1".to_string(),
-                objective: "test".to_string(),
-            })
+            .run_task(TaskSpec { task_id: "t1".to_string(), objective: "test".to_string() })
             .await
             .unwrap();
         assert_eq!(summary.stopped_reason, "provider_done");

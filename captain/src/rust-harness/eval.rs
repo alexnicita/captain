@@ -25,12 +25,7 @@ pub struct EvalCheck {
 pub fn evaluate_replay(summary: &ReplaySummary) -> EvalReport {
     let checks = evaluate_summary_checks(summary);
     let pass = checks.iter().all(|c| c.pass);
-    EvalReport {
-        pass,
-        checks,
-        metrics: None,
-        rollups: None,
-    }
+    EvalReport { pass, checks, metrics: None, rollups: None }
 }
 
 pub fn evaluate_events(summary: &ReplaySummary, events: &[HarnessEvent]) -> EvalReport {
@@ -81,12 +76,7 @@ pub fn evaluate_events(summary: &ReplaySummary, events: &[HarnessEvent]) -> Eval
     }
 
     let pass = checks.iter().all(|c| c.pass);
-    EvalReport {
-        pass,
-        checks,
-        metrics: Some(metrics),
-        rollups: Some(rollups),
-    }
+    EvalReport { pass, checks, metrics: Some(metrics), rollups: Some(rollups) }
 }
 
 fn evaluate_summary_checks(summary: &ReplaySummary) -> Vec<EvalCheck> {
@@ -120,11 +110,7 @@ fn evaluate_summary_checks(summary: &ReplaySummary) -> Vec<EvalCheck> {
     });
 
     let task_started = summary.kinds.get(kinds::TASK_STARTED).copied().unwrap_or(0);
-    let task_finished = summary
-        .kinds
-        .get(kinds::TASK_FINISHED)
-        .copied()
-        .unwrap_or(0);
+    let task_finished = summary.kinds.get(kinds::TASK_FINISHED).copied().unwrap_or(0);
 
     checks.push(EvalCheck {
         name: "has_task_started".to_string(),
@@ -147,10 +133,7 @@ fn evaluate_summary_checks(summary: &ReplaySummary) -> Vec<EvalCheck> {
     checks.push(EvalCheck {
         name: "sequence_monotonic_per_run".to_string(),
         pass: summary.sequence_monotonic_per_run,
-        detail: format!(
-            "sequence_monotonic_per_run={}",
-            summary.sequence_monotonic_per_run
-        ),
+        detail: format!("sequence_monotonic_per_run={}", summary.sequence_monotonic_per_run),
     });
 
     let selected_run_consistent = summary
@@ -164,22 +147,13 @@ fn evaluate_summary_checks(summary: &ReplaySummary) -> Vec<EvalCheck> {
         detail: format!(
             "selected_run_id={:?}, run_ids={}",
             summary.selected_run_id,
-            summary
-                .run_ids
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(",")
+            summary.run_ids.iter().cloned().collect::<Vec<_>>().join(",")
         ),
     });
 
     let known = known_kinds();
-    let unknown: Vec<String> = summary
-        .kinds
-        .keys()
-        .filter(|kind| !known.contains(kind.as_str()))
-        .cloned()
-        .collect();
+    let unknown: Vec<String> =
+        summary.kinds.keys().filter(|kind| !known.contains(kind.as_str())).cloned().collect();
     checks.push(EvalCheck {
         name: "no_unknown_event_kinds".to_string(),
         pass: unknown.is_empty(),
@@ -204,10 +178,9 @@ mod tests {
 
     #[test]
     fn eval_passes_good_fixture() {
-        let summary = replay_str(include_str!(
-            "../../harnesses/rust-harness/fixtures/good_run.jsonl"
-        ))
-        .unwrap();
+        let summary =
+            replay_str(include_str!("../../harnesses/rust-harness/fixtures/good_run.jsonl"))
+                .unwrap();
         let report = evaluate_replay(&summary);
         assert!(report.pass);
     }
@@ -220,10 +193,7 @@ mod tests {
         .unwrap();
         let report = evaluate_replay(&summary);
         assert!(!report.pass);
-        assert!(report
-            .checks
-            .iter()
-            .any(|c| c.name == "has_task_finished" && !c.pass));
+        assert!(report.checks.iter().any(|c| c.name == "has_task_finished" && !c.pass));
     }
 
     #[test]
@@ -256,10 +226,7 @@ mod tests {
 "#;
         let summary = replay_str(content).unwrap();
         let report = evaluate_replay(&summary);
-        assert!(report
-            .checks
-            .iter()
-            .any(|c| c.name == "has_run_finished" && !c.pass));
+        assert!(report.checks.iter().any(|c| c.name == "has_run_finished" && !c.pass));
     }
 
     #[test]
@@ -270,9 +237,6 @@ mod tests {
 "#;
         let summary = replay_str(content).unwrap();
         let report = evaluate_replay(&summary);
-        assert!(report
-            .checks
-            .iter()
-            .any(|c| c.name == "sequence_monotonic_per_run" && !c.pass));
+        assert!(report.checks.iter().any(|c| c.name == "sequence_monotonic_per_run" && !c.pass));
     }
 }
