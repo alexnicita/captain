@@ -26,6 +26,7 @@ Environment overrides:
   CAPTAIN_REPO_URL      Git remote URL (default: https://github.com/alexnicita/captain.git)
   CAPTAIN_SKIP_DOCTOR=1 Skip setup/doctor helper scripts
   CAPTAIN_SETUP_OPENROUTER=1    Run OpenRouter setup during install
+  CAPTAIN_OPENROUTER_NON_INTERACTIVE=1   Run OpenRouter setup without tty prompts
   CAPTAIN_OPENROUTER_MODEL      OpenRouter model id for setup
   OPENROUTER_API_KEY            Optional OpenRouter API key for setup
   CAPTAIN_OPENROUTER_API_KEY    Alternate OpenRouter key source for setup
@@ -78,6 +79,7 @@ need_cmd() {
 }
 
 need_cmd git
+need_cmd curl
 need_cmd bash
 
 run_openrouter_setup_if_requested() {
