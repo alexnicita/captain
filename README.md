@@ -1,5 +1,7 @@
 # Captain
 
+![CI](https://github.com/alexnicita/captain/actions/workflows/ci.yml/badge.svg)
+
 Captain turns autonomous coding agents into governed coding runs.
 
 It is a local-first harness for OpenClaw, Hermes, Claude Code, Codex, and other tool-using coding agents that need more than a prompt: runtime budgets, command policy, phase logs, replayable JSONL events, commit discipline, and operator-visible release gates.
@@ -15,6 +17,8 @@ The operating idea is simple: agents can work longer when the run has a flight r
 - Keeps personal/operator files private by default.
 
 ## Use Captain on an Agent Machine
+
+**Note:** For full linting support, install Clippy with `rustup component add clippy`.
 
 Captain is for the machine where your agents already live: an EC2 instance or MacBook with OpenClaw, Hermes, Claude Code, Codex, or another coding-agent CLI installed. Add Captain to that box, put `captain` on `PATH`, and run agents through Captain when you want better control: timeboxes, logs, command policy, commit gates, replayable events, and opt-in pushes.
 
