@@ -113,6 +113,7 @@ impl CommandPolicy {
         policy
     }
 
+    /// Returns true if the given command is in the allow‑list.
     pub fn allows(&self, command: &str) -> bool {
         self.allowlisted_commands.contains(command)
     }

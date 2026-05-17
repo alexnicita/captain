@@ -825,7 +825,7 @@ mod tests {
                 assert_eq!(prompt.as_deref(), Some("focus on portability"));
                 assert!(prompt_file.is_none());
             }
-            _ => panic!("expected code command"),
+            _ => unreachable!("expected code command"),
         }
     }
 

@@ -13,10 +13,12 @@ pub struct ChecklistStats {
 }
 
 impl ChecklistStats {
+    /// Returns the number of pending checklist items.
     pub fn pending(self) -> usize {
         self.total.saturating_sub(self.done)
     }
 
+    /// Returns true when every checklist item is complete.
     pub fn all_done(self) -> bool {
         self.total > 0 && self.done == self.total
     }
@@ -106,6 +108,7 @@ impl RuntimeGate {
     }
 }
 
+/// Starts the runtime/checklist gate loop.
 pub async fn gate_start(args: GateStartArgs) -> Result<()> {
     if args.poll_seconds == 0 {
         return Err(anyhow!("poll_seconds must be > 0"));
@@ -211,6 +214,7 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
     }
 }
 
+/// Returns the current gate status as JSON.
 pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
     let run_dir = resolve_run_dir(args.run_dir.as_deref(), args.base_dir.as_deref())?;
     let state = read_state(&run_dir)?;
@@ -245,6 +249,7 @@ pub fn gate_status(args: GateStatusArgs) -> Result<serde_json::Value> {
     }))
 }
 
+/// Stops the gate with the provided arguments and returns the result as JSON.
 pub fn gate_stop(args: GateStopArgs) -> Result<serde_json::Value> {
     let run_dir = resolve_run_dir(args.run_dir.as_deref(), args.base_dir.as_deref())?;
     let stop_path = run_dir.join("STOP");
@@ -260,6 +265,7 @@ pub fn gate_stop(args: GateStopArgs) -> Result<serde_json::Value> {
     }))
 }
 
+/// Parses a checklist file and returns completion statistics.
 pub fn parse_checklist(path: &Path) -> Result<ChecklistStats> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("failed to read checklist: {}", path.display()))?;
