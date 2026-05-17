@@ -31,7 +31,7 @@ def test_security_docs_define_isolation_boundary():
 def test_product_naming_explains_agent_harness_compatibility():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "Captain** is the product and repository" in readme
-    assert "`agent-harness`** is the current Rust package/binary" in readme
+    assert "**`agent-harness`** is the current Rust package/binary" in readme
 
 
 def test_readme_frontloads_captain_cli_for_agent_machines():
