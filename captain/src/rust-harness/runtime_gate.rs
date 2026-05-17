@@ -152,8 +152,8 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
         ),
     )?;
 
-    println!("Run directory: {}", run_dir.display());
-    println!("Started at epoch: {}", state.start_epoch);
+    // println!("Run directory: {}", run_dir.display());
+    // println!("Started at epoch: {}", state.start_epoch);
 
     let stop_path = run_dir.join("STOP");
     let mut next_heartbeat = 0u64;
@@ -164,7 +164,7 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
             state.stop_epoch = Some(now_unix());
             write_state(&run_dir, &state)?;
             append_log(&run_dir, "STOP file detected; run stopped")?;
-            println!("Stopped by operator request.");
+            // println!("Stopped by operator request.");
             return Ok(());
         }
 
@@ -202,8 +202,8 @@ pub async fn gate_start(args: GateStartArgs) -> Result<()> {
                     elapsed, checklist_stats.done, checklist_stats.total
                 ),
             )?;
-            println!("DONE: runtime gate + checklist completion both satisfied.");
-            println!("Progress log: {}", run_dir.join("progress.log").display());
+            // println!("DONE: runtime gate + checklist completion both satisfied.");
+            // println!("Progress log: {}", run_dir.join("progress.log").display());
             return Ok(());
         }
 
