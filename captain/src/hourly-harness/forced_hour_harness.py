@@ -21,6 +21,7 @@ import os
 import re
 import signal
 import sys
+import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +46,8 @@ class ChecklistStats:
     def all_done(self) -> bool:
         return self.total > 0 and self.done == self.total
 
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -145,9 +148,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         ),
     )
 
-    print(f"Run directory: {run_dir}")
-    print(f"Started at: {state['start_iso_utc']}")
-    print("Harness is now enforcing runtime + checklist completion gates...")
+    logging.info(f"Run directory: {run_dir}")
+    logging.info(f"Started at: {state['start_iso_utc']}")
+    logging.info("Harness is now enforcing runtime + checklist completion gates...")
 
     stop_path = run_dir / "STOP"
     next_heartbeat = 0.0
@@ -170,7 +173,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             state["status"] = "stopped"
             state["stop_iso_utc"] = utc_now().isoformat()
             write_state(run_dir, state)
-            print("Stopped by operator request.")
+            logging.info("Stopped by operator request.")
             return 2
 
         checklist_stats = parse_checklist(checklist)
@@ -203,8 +206,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             state["finish_iso_utc"] = utc_now().isoformat()
             state["elapsed_sec"] = elapsed
             write_state(run_dir, state)
-            print("DONE: Minimum runtime + checklist are both satisfied.")
-            print(f"Progress log: {run_dir / 'progress.log'}")
+            logging.info("DONE: Minimum runtime + checklist are both satisfied.")
+            logging.info(f"Progress log: {run_dir / 'progress.log'}")
             return 0
 
         time.sleep(args.poll_seconds)
@@ -216,16 +219,16 @@ def cmd_status(args: argparse.Namespace) -> int:
     checklist = parse_checklist(Path(state["checklist_path"]))
     elapsed, remaining, gate_open = summarize_state(state, checklist)
 
-    print(f"run_dir: {run_dir}")
-    print(f"status: {state.get('status', 'unknown')}")
-    print(f"started: {state['start_iso_utc']}")
-    print(f"elapsed_sec: {elapsed:.0f}")
-    print(f"remaining_sec: {remaining:.0f}")
-    print(f"runtime_gate_open: {gate_open}")
-    print(f"checklist: {checklist.done}/{checklist.total} done")
-    print(f"all_checklist_done: {checklist.all_done}")
-    print(f"can_finish_now: {gate_open and checklist.all_done}")
-    print(f"progress_log: {run_dir / 'progress.log'}")
+    logging.info(f"run_dir: {run_dir}")
+    logging.info(f"status: {state.get('status', 'unknown')}")
+    logging.info(f"started: {state['start_iso_utc']}")
+    logging.info(f"elapsed_sec: {elapsed:.0f}")
+    logging.info(f"remaining_sec: {remaining:.0f}")
+    logging.info(f"runtime_gate_open: {gate_open}")
+    logging.info(f"checklist: {checklist.done}/{checklist.total} done")
+    logging.info(f"all_checklist_done: {checklist.all_done}")
+    logging.info(f"can_finish_now: {gate_open and checklist.all_done}")
+    logging.info(f"progress_log: {run_dir / 'progress.log'}")
     return 0
 
 
@@ -234,7 +237,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
     stop_path = run_dir / "STOP"
     stop_path.write_text(f"stop requested at {utc_now().isoformat()}\n", encoding="utf-8")
     append_log(run_dir, "STOP requested by operator")
-    print(f"Stop requested: {stop_path}")
+    logging.info(f"Stop requested: {stop_path}")
     return 0
 
 
