@@ -1,3 +1,4 @@
+/// Normalizes the scope token of a commit subject by trimming whitespace and converting to lowercase.
 pub fn normalize_scope_token(input: &str) -> String {
     let mut out = String::new();
     let mut prev_dash = false;
