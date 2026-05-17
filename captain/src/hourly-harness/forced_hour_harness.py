@@ -210,10 +210,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         time.sleep(args.poll_seconds)
 
 
+def _get_checklist_from_state(state: dict) -> ChecklistStats:
+    """Extract and parse the checklist defined in the run state."""
+    return parse_checklist(Path(state["checklist_path"]))
+
+
 def cmd_status(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    try:
+        run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
     state = read_state(run_dir)
-    checklist = parse_checklist(Path(state["checklist_path"]))
+    checklist = _get_checklist_from_state(state)
     elapsed, remaining, gate_open = summarize_state(state, checklist)
 
     print(f"run_dir: {run_dir}")
@@ -230,7 +239,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    try:
+        run_dir = Path(args.run_dir).resolve() if args.run_dir else load_latest_run_dir()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
     stop_path = run_dir / "STOP"
     stop_path.write_text(f"stop requested at {utc_now().isoformat()}\n", encoding="utf-8")
     append_log(run_dir, "STOP requested by operator")
