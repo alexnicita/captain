@@ -1,6 +1,6 @@
 # Tests
 
-Basic smoke tests for repo scaffolding and harness entrypoints.
+Basic smoke tests for repo scaffolding and harness entrypoints. This suite also validates ConstantCoder PR publisher fixes for production E2E.
 
 Run all tests:
 
