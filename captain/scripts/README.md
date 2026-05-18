@@ -11,4 +11,4 @@ Key scripts:
 - `init-local-profile.sh`
 - `storage_guard.sh`
 - `heartbeat_checkin.sh` (tracks heartbeat check freshness in `memory/heartbeat-state.json`, or `HEARTBEAT_STATE_FILE` for tests/isolated runs)
-- `list_tests.sh` – utility to list all test scripts in the repository (robust from any subdirectory).
+- `../../scripts/list_tests.sh` - utility to list all test scripts in the repository (robust from any subdirectory).

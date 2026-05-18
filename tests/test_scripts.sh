@@ -177,6 +177,6 @@ grep -q 'cargo build --bin agent-harness' captain/harnesses/rust-harness/scripts
 }
 
 # Verify list_tests.sh utility
-bash captain/scripts/list_tests.sh --help >/dev/null || { echo "list_tests.sh --help failed" >&2; exit 1; }
-list_output=$(bash captain/scripts/list_tests.sh)
+bash scripts/list_tests.sh --help >/dev/null || { echo "list_tests.sh --help failed" >&2; exit 1; }
+list_output=$(bash scripts/list_tests.sh)
 if ! grep -q 'tests/test_scripts.sh' <<<"$list_output"; then echo "list_tests.sh output missing this test script" >&2; exit 1; fi
