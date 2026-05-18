@@ -14,7 +14,7 @@ captain/
   src/                 implementation code and subsystem adapters
   tests/               product test suites
   harnesses/           stable compatibility entrypoints
-  scripts/             setup, doctor, and operator scripts
+  scripts/             setup, doctor, and operator scripts (includes `list_tests.sh` utility)
   skills/              OpenClaw-compatible governance packs
   tools/               product-owned helper tools
   templates/           local operator profile templates
