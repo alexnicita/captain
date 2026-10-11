@@ -6,11 +6,19 @@ use async_trait::async_trait;
 use std::path::Path;
 use std::sync::Arc;
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async-trait 0.1.89 generates redundant must_use on boxed futures; rust-clippy#17529"
+)]
 #[async_trait]
 pub trait CodePlanner: Send + Sync {
     async fn plan_task(&self, task: &CodeTask, repo_snapshot: &str) -> Result<ArchitecturePlan>;
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async-trait 0.1.89 generates redundant must_use on boxed futures; rust-clippy#17529"
+)]
 #[async_trait]
 pub trait CodeDiffGenerator: Send + Sync {
     async fn generate_diff(
@@ -21,6 +29,10 @@ pub trait CodeDiffGenerator: Send + Sync {
     ) -> Result<CodeDiffProposal>;
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async-trait 0.1.89 generates redundant must_use on boxed futures; rust-clippy#17529"
+)]
 #[async_trait]
 pub trait CodeDiffApplier: Send + Sync {
     async fn apply_diff(

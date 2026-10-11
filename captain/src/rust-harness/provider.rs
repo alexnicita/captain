@@ -30,6 +30,10 @@ pub struct PlannedToolCall {
     pub input_json: Value,
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async-trait 0.1.89 generates redundant must_use on boxed futures; rust-clippy#17529"
+)]
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn name(&self) -> &'static str;
