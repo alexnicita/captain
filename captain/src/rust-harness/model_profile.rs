@@ -13,7 +13,7 @@ impl std::fmt::Display for ProviderApi {
             ProviderApi::ChatCompletions => "chat_completions",
             ProviderApi::Responses => "responses",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -34,7 +34,7 @@ impl std::fmt::Display for EditFormat {
             EditFormat::StringReplacement => "string_replacement",
             EditFormat::Unknown => "unknown",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

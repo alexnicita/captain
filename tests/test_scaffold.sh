@@ -31,7 +31,7 @@ for p in "${required_paths[@]}"; do
   [[ -e "$p" ]] || { echo "missing required path: $p" >&2; exit 1; }
 done
 
-expected_top_dirs="$(printf "captain\ndocs\ntests")"
+expected_top_dirs="$(printf "captain\ndocs\nscripts\ntests")"
 actual_top_dirs="$(
   find . -maxdepth 1 -type d ! -name . ! -name .git -exec basename {} \; | sort |
     while IFS= read -r dir; do
