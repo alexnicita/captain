@@ -171,7 +171,7 @@ impl EventSink {
             let mut next_seq = self
                 .next_seq
                 .lock()
-                .map_err(|e| anyhow::anyhow!("event seq mutex poisoned: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("event seq mutex poisoned: {e}"))?;
             event.seq = Some(*next_seq);
             *next_seq += 1;
         }
@@ -180,7 +180,7 @@ impl EventSink {
         line.push(b'\n');
 
         let mut guard =
-            self.file.lock().map_err(|e| anyhow::anyhow!("event sink mutex poisoned: {}", e))?;
+            self.file.lock().map_err(|e| anyhow::anyhow!("event sink mutex poisoned: {e}"))?;
         guard.write_all(&line).context("failed to append event line")?;
         guard.flush().context("failed to flush event sink")?;
         Ok(())
