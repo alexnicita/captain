@@ -546,6 +546,10 @@ pub struct CycleContext {
     pub run_session_id: String,
 }
 
+#[allow(
+    clippy::double_must_use,
+    reason = "async-trait 0.1.89 generates redundant must_use on boxed futures; rust-clippy#17529"
+)]
 #[async_trait]
 pub trait WorkExecutor: Send + Sync {
     fn name(&self) -> &'static str;
