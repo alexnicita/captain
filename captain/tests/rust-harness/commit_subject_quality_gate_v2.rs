@@ -86,3 +86,10 @@ fn deterministic_subject_prioritizes_src_when_generated_docs_are_also_staged() {
     );
     assert!(has_informative_subject_scope(&subject, &["captain/src/dogfood_smoke.rs"]));
 }
+
+#[test]
+fn rejects_scope_mismatch_with_no_file_stem_match() {
+    let changed = ["src/bar.rs", "src/baz.rs"];
+    let subject = "fix(foo): change unrelated functionality";
+    assert!(!has_informative_subject_scope(subject, &changed));
+}
