@@ -16,6 +16,23 @@ fn normalize_scope_token_is_deterministic() {
 }
 
 #[test]
+fn normalize_scope_token_collapses_multiple_delimiters_and_trims_brackets() {
+    assert_eq!(normalize_scope_token("__runtime__gate__"), "runtime-gate");
+    assert_eq!(normalize_scope_token("..coding.rs.."), "coding-rs");
+    assert_eq!(normalize_scope_token("(src)/(code)"), "src-code");
+    assert_eq!(normalize_scope_token("*test*code*"), "test-code");
+}
+
+#[test]
+fn normalize_scope_token_trims_leading_and_trailing_delimiters() {
+    assert_eq!(normalize_scope_token("__src"), "src");
+    assert_eq!(normalize_scope_token("src__"), "src");
+    assert_eq!(normalize_scope_token("..coding.rs.."), "coding-rs");
+    assert_eq!(normalize_scope_token("..src"), "src");
+    assert_eq!(normalize_scope_token("src.."), "src");
+}
+
+#[test]
 fn rejects_known_generic_template_subjects() {
     let subject = "build a generalizable patch flow — harness: coding cycle";
     assert!(is_generic_subject(subject));
