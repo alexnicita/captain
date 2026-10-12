@@ -6,4 +6,5 @@ fi
 if ! rustup component list --installed | grep -q rustfmt; then
   rustup component add rustfmt
 fi
+cargo fmt -- --check
 cargo clippy -- -D warnings
